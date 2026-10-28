@@ -1,0 +1,14 @@
+# ogo build artifacts
+*.binary
+*.p2asm
+
+# Local assistant state, as in ogo's, p2-11's and obeam's .gitignore: a
+# `git add -A` would otherwise sweep it into a repository meant to be public.
+.claude/
+
+# Reference material kept beside the sources and never committed, third
+# parties' copyright: the P2XCForth archive the user downloaded and the
+# Parallax forum pages saved on 2026-10-28 (ASSESSMENT.md, Housekeeping).
+/P2XCForthC.zip
+/forum/
+*.[zZ][iI][pP]
