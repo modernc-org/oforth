@@ -21,10 +21,13 @@ OctoGo (`../ogo`), p2-11 (`../p2-11`) and obeam (`../obeam`); the words were
 ASSESSMENT.md section 4, "Probe M0"): code copied from PASM templates into
 a hub array at run time runs on the REPL's cog and on a cog of its own,
 traps back into OctoGo work, and the costs match the model but for `REP`
-in hub RAM. The user decided go the same evening. Next: the open points
-of ASSESSMENT.md section 9 settled with the user, then M1, the kernel. A private
-repository exists on GitLab (cznic/oforth, `origin`) since 2026-10-28,
-holding the documents, the logo and the licence. `.github/FUNDING.yml` is
+in hub RAM. The user decided go the same evening and settled the open
+points (below, "Decisions taken"). M1, the kernel, runs the same night:
+the REPL on the serial line compiles colon definitions to native code, and
+`ogo test ./forth` passes on the board (seven tests, the encoder's against
+flexspin among them); the first numbers are in README.md. Not in M1: DOES>,
+POSTPONE, SEE, EVALUATE, inlining of colon words, the host twin. The
+repository is on GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
 
@@ -38,14 +41,16 @@ The files:
   milestones M0 to M4 (6), the risks (7), what OctoGo gets (8), the open
   points for the discussion (9), housekeeping (10) and the sources. It is
   plain ASCII with `--` for a dash; keep it so.
-- `README.md`: what it is to be and the status, honestly: nothing runs
-  yet. The slogan, "May the Forth be with you.", is the user's choice of
+- `README.md`: what it is, what runs and what does not, and the first
+  numbers. The slogan, "May the Forth be with you.", is the user's choice of
   2026-10-28. `LICENSE` and `AUTHORS` as the siblings'.
 - `logo.png`: OctoGo's gopher with "4th" on its belly, drawn by
   `scripts/logo.py` from `../ogo/web/logo-full.png` (the user's idea of
   2026-10-28; a draft until the user says otherwise). The gopher is Renee
   French's Go gopher, CC BY 4.0, by way of OctoGo's mascot: the README's
   attribution line stays while the logo does.
+- `main.ogo`, `eng/`, `forth/`: the Forth; "The Forth's architecture"
+  below.
 - `probe/m0`: the probe, a program of its own (`main.ogo` and the Spin2
   object `eng`), research and not the Forth: it prints clocks, and its
   numbers are ASSESSMENT.md's. Re-run it after any change of `ogo`: the
@@ -83,13 +88,27 @@ the like (P2XCForth's mechanism, 167 to 280 clocks a trap there); B, an
 engine cog of its own, p2-11's `core` pattern, commanded through a hub long.
 Proposed: A for the REPL and B's image for running a word on another cog,
 B alone if A's probe fails. The return stack is the LUT with PB as the link
-register, or PTRA with CALLA/RETA; M0 measures, the LUT is expected to win.
+register, or PTRA with CALLA/RETA; M0 measured the LUT twice as fast.
 
-The open points of section 9 are the agenda of the discussion: A or B;
-the return stack; how ANS-standard against TAQOZ's dialect; where the
-console lives; the name of the word that runs a word on a cog; the first
-demo; IPS's hashed dictionary and EXIT-hooked task switch; how far toward
-Mecrisp's register-allocating kernel later.
+## Decisions taken (change them only with the user)
+
+The user settled them on 2026-10-28, all as proposed; ASSESSMENT.md
+section 9 has the reasons:
+
+- Design A, the REPL's own cog, with B's image for `RUN`.
+- The return stack in LUT, PB the link register.
+- ANS CORE as the dialect, the P2 words beside it.
+- The console is `p2.WriteByte` on the main cog and `p2.ReadByte` on a
+  reader cog of its own, into a ring: the decision's own condition for the
+  cog, pasted source losing characters, holds by OctoGo's measurement
+  (`../ogo/_examples/protocol`: nothing buffers behind `p2.ReadByte`), so
+  M1 took it from the start, 2026-10-28.
+- `RUN` runs a word on a cog of its own.
+- The first demo is the REPL alone; the embedding of M3 is shown by an
+  example program in this repository, not inside p2-11.
+- The dictionary is hashed now; an EXIT-hooked task switch only later and
+  only if measured nearly free.
+- A register-allocating kernel, Mecrisp's, is considered after M2.
 
 The bar is P2XCForth's XBYTE core, not TAQOZ: section 3.6's table has the
 clocks per operation of all three. M2 runs the Byte sieve, the empty loop
@@ -169,25 +188,65 @@ All measured or read in this session and recorded with their sources in
   the binary, which is how generated code is judged, and `ogo build
   --report` says where the bytes went.
 
+## The Forth's architecture
+
+- **`eng/eng.spin2`** is the engine, the one Spin2 object: `run(xt,
+  fresh)`, an `orgh` block that enters code by `calld pb, xt` (probe M0's,
+  grown a trap), the register accessors, and the templates. Its header
+  comment is the register map: TOS in PR0, PB a word's link, the data stack
+  in LUT 8 to 167 through PTRB (LUT 8 an unread cell, so that DUP on an
+  empty stack is no underflow and DROP is), the return stack in LUT 168 to
+  255 through RP growing down, LIX/LIM the innermost loop's index and
+  limit, the outer loops' on the return stack. A trap is `mov rq, #id` and
+  `calld cont, back`.
+- **The template table** is self-describing: a header long (length in
+  longs, F_CALLS, F_HIDDEN, F_IMM, SLOT1), the name and a zero, `alignl`,
+  the code; -1 ends it. A visible template is a primitive of the
+  dictionary; a hidden one, named `~...`, is the compiler's own, and `~X`
+  for a primitive X is X's form with a literal folded into the immediate of
+  the long at its slot (AUGS is inserted for a value over 511). A template
+  is copied into words, so it has no absolute branch and calls nothing
+  unless marked F_CALLS (EXECUTE), whose standalone code then gets a frame.
+  `encref` after the table is what flexspin assembles of the encoder's
+  cases, which `TestEncoder` holds the compiler to.
+- **`forth/`**: `space.ogo` the code space (P2 instructions) and the data
+  space (HERE, BASE and STATE in its first cells), apart, both hub RAM, an
+  address being a hub address; `dict.ogo` the headers, names and a hash
+  table of chains, case-insensitive; `compile.ogo` the template loader, the
+  emitters, the pending literal that the next primitive folds, calls, and
+  the control-flow stack; `interp.ogo` input, numbers, `exec` (run, serve
+  traps, resume), errors and the REPL; `words.ogo` the words OctoGo
+  executes, a `switch` in `octo`, with `needs` giving how many cells each
+  takes, checked before it runs.
+- **Every word has executable code at `xt`**: a primitive its template and
+  `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
+  word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
+  `jmp pb`; compiled, a primitive is copied, a colon word called, an OctoGo
+  word a trap, a constant a pending literal.
+- **An error** is `abort`: the line stops, a trapped word is abandoned (its
+  state being registers only, nothing unwinds), the stacks are emptied and
+  a definition in progress is taken back. The REPL checks the stacks'
+  bounds after every line.
+- A new primitive is a template entry; a new OctoGo word is an `o...`
+  constant, a line in `octoWords`, a `case` in `octo` and its count in
+  `needs`; a new test is a `check` in `forth/forth_test.ogo`.
+- Spin2 traps met: a label cannot be a condition's name (`if_e` is one); in
+  Spin code a CON name is a constant, so the accessors name PR0-PR7; a
+  method and a DAT label cannot share a name; names are case-insensitive.
+
 ## Commands
-
-The probe, the only code so far (the board run under the lock, as below):
-
-```sh
-ogo build -o m0.binary ./probe/m0
-```
-
-When the Forth lands it follows the siblings:
 
 ```sh
 ogo version                     # record it with every measurement
 ogo fmt -l -w .                 # format in place
 ogo build                       # -> oforth.binary and oforth.p2asm
+ogo build --report              # where the hub RAM goes
 ogo build --clock 200MHz        # the default is 160 MHz
-flock -w 900 /tmp/p2-board.lock ogo run          # build, load, terminal at 230400 baud; Ctrl-] leaves
-flock -w 900 /tmp/p2-board.lock ogo test ./...   # one board run a package
-flock -w 900 /tmp/p2-board.lock ogo test -run TestX ./pkg
-ogo test -c ./pkg               # build the tests only, no board
+flock -w 900 /tmp/p2-board.lock ogo run          # build, load, the REPL at 230400 baud; Ctrl-] leaves
+flock -w 900 /tmp/p2-board.lock ogo test ./forth # the tests, on the board, seconds
+flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
+ogo test -c ./forth             # build the tests only, no board
+ogo build -o m0.binary ./probe/m0                # the probe
 ```
 
 To capture a board run without a terminal, as the siblings do:
@@ -199,7 +258,8 @@ flock -o -w 900 /tmp/p2-board.lock bash -c \
 ```
 
 Bytes written into that pipe before the `\x1d` reach the program as serial
-input, which is how a REPL will be scripted. A test is `func TestX(t
+input, which is how the REPL is scripted: `tr '\n' '\r' < file.fth` in
+the subshell pastes a file, the reader cog keeping up. A test is `func TestX(t
 *testing.T)` reporting with `println` and `t.Fail()`. The host side (the
 packages that import no `p2`) runs under Go once given a package clause, as
 p2-11's and obeam's `scripts/twin.sh` do; write one of those here when the

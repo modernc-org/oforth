@@ -1,0 +1,391 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"p2"
+
+	"modernc.org/oforth/eng"
+)
+
+// The input: one line at a time, in tib, parsed from toIn on.
+var (
+	tib  [256]byte
+	ntib int
+	toIn int
+)
+
+// The output goes to the serial line when Console is set, a newline as CR
+// LF, and otherwise into out, where a test reads it.
+var (
+	Console bool
+	out     [4096]byte
+	nout    int
+)
+
+// Key answers the next byte of the console, which main reads on a cog of its
+// own. KEY and the REPL take their input from it.
+var Key func() int
+
+func emit(c byte) {
+	if Console {
+		if c == '\n' {
+			p2.WriteByte(13)
+		}
+		p2.WriteByte(c)
+		return
+	}
+	if nout < len(out) {
+		out[nout] = c
+		nout++
+	}
+}
+
+func typeStr(s string) {
+	for i := 0; i < len(s); i++ {
+		emit(s[i])
+	}
+}
+
+func typeBytes(s []byte) {
+	for _, c := range s {
+		emit(c)
+	}
+}
+
+// Output answers what was written since ResetOutput.
+func Output() []byte { return out[:nout] }
+
+func ResetOutput() { nout = 0 }
+
+// An error abandons the line, and what was being compiled, and empties the
+// stacks.
+var (
+	aborted bool
+	abortS  string
+)
+
+func abort(s string) {
+	if !aborted {
+		aborted = true
+		abortS = s
+	}
+}
+
+func reset() {
+	eng.SetDsp(ds0)
+	eng.SetRp(rp0)
+	discard()
+}
+
+// The data stack, from OctoGo: TOS in a register, the rest in LUT.
+func depth() int { return int(eng.GetDsp()) - int(ds0) }
+
+func push(v uint32) {
+	d := eng.GetDsp()
+	if d >= dsMax {
+		abort("stack overflow")
+		return
+	}
+	p2.WriteLUT(d, eng.GetTos())
+	eng.SetDsp(d + 1)
+	eng.SetTos(v)
+}
+
+func pop() uint32 {
+	d := eng.GetDsp()
+	if d <= ds0 {
+		abort("stack underflow")
+		return 0
+	}
+	v := eng.GetTos()
+	eng.SetDsp(d - 1)
+	eng.SetTos(p2.ReadLUT(d - 1))
+	return v
+}
+
+// nth answers the cell n below TOS, TOS being 0.
+func nth(n int) uint32 {
+	if n == 0 {
+		return eng.GetTos()
+	}
+	return p2.ReadLUT(eng.GetDsp() - uint32(n))
+}
+
+// exec runs the code at xt, serving its traps, until it returns.
+func exec(xt uint32) {
+	eng.Run(xt, 1)
+	for !aborted {
+		r := eng.Request()
+		if r == 0 {
+			return
+		}
+		// What the word goes on with is kept here, for a word OctoGo runs
+		// while serving the trap would change it.
+		k := eng.Continuation()
+		pb := eng.GetPb()
+		octo(int(r))
+		if aborted {
+			return
+		}
+		eng.SetPb(pb)
+		eng.Run(k, 0)
+	}
+}
+
+func execute(w int) {
+	switch words[w].kind {
+	case kOcto:
+		octo(int(words[w].id))
+	case kConst:
+		push(words[w].val)
+	default:
+		exec(words[w].xt)
+	}
+}
+
+func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\r' || c == '\n' }
+
+// parseName answers the next name of the input, empty at the end.
+func parseName() []byte {
+	for toIn < ntib && isSpace(tib[toIn]) {
+		toIn++
+	}
+	s := toIn
+	for toIn < ntib && !isSpace(tib[toIn]) {
+		toIn++
+	}
+	e := toIn
+	if toIn < ntib {
+		toIn++
+	}
+	return tib[s:e]
+}
+
+// parse answers the input up to the delimiter c, which it skips.
+func parse(c byte) []byte {
+	s := toIn
+	for toIn < ntib && tib[toIn] != c {
+		toIn++
+	}
+	e := toIn
+	if toIn < ntib {
+		toIn++
+	}
+	return tib[s:e]
+}
+
+// number converts s in BASE, or in the base a prefix gives: $ for 16, # for
+// 10, % for 2, and 'c' for a character.
+func number(s []byte) (uint32, bool) {
+	if len(s) == 3 && s[0] == '\'' && s[2] == '\'' {
+		return uint32(s[1]), true
+	}
+	b := base()
+	i := 0
+	if i < len(s) {
+		switch s[i] {
+		case '$':
+			b = 16
+			i++
+		case '#':
+			b = 10
+			i++
+		case '%':
+			b = 2
+			i++
+		}
+	}
+	neg := false
+	if i < len(s) && s[i] == '-' {
+		neg = true
+		i++
+	}
+	if i == len(s) || b < 2 || b > 36 {
+		return 0, false
+	}
+	v := uint32(0)
+	for ; i < len(s); i++ {
+		c := upper(s[i])
+		d := uint32(99)
+		switch {
+		case c >= '0' && c <= '9':
+			d = uint32(c - '0')
+		case c >= 'A' && c <= 'Z':
+			d = uint32(c-'A') + 10
+		}
+		if d >= b {
+			return 0, false
+		}
+		v = v*b + d
+	}
+	if neg {
+		v = -v
+	}
+	return v, true
+}
+
+// interpret runs what is in tib.
+func interpret() {
+	toIn = 0
+	for !aborted {
+		s := parseName()
+		if len(s) == 0 {
+			return
+		}
+		w := find(s)
+		if w >= 0 {
+			f := words[w].flags
+			switch {
+			case compiling() && f&fImmediate == 0:
+				compileWord(w)
+			case !compiling() && f&fCompile != 0:
+				abortName(s, " is compile-only")
+			default:
+				execute(w)
+			}
+			continue
+		}
+		v, ok := number(s)
+		if !ok {
+			abortName(s, " ?")
+			return
+		}
+		if compiling() {
+			compileLit(v)
+		} else {
+			push(v)
+		}
+	}
+}
+
+// The name an error is about.
+var (
+	errName [32]byte
+	nerr    int
+)
+
+func abortName(s []byte, msg string) {
+	nerr = 0
+	for _, c := range s {
+		if nerr < len(errName) {
+			errName[nerr] = c
+			nerr++
+		}
+	}
+	abort(msg)
+}
+
+// checkStacks reports a stack an executed line left out of bounds.
+func checkStacks() {
+	if aborted {
+		return
+	}
+	d := eng.GetDsp()
+	r := eng.GetRp()
+	switch {
+	case d < ds0:
+		abort("stack underflow")
+	case d >= dsMax:
+		abort("stack overflow")
+	case r > rp0 || r < dsMax:
+		abort("return stack unbalanced")
+	}
+}
+
+// line interprets one line and answers whether it went well, the error
+// having been written and the system reset if not.
+func line() bool {
+	aborted = false
+	nerr = 0
+	interpret()
+	checkStacks()
+	if !aborted {
+		return true
+	}
+	if nerr > 0 {
+		typeBytes(errName[:nerr])
+	} else {
+		typeStr("error: ")
+	}
+	typeStr(abortS)
+	emit('\n')
+	reset()
+	return false
+}
+
+// Evaluate interprets s, line by line, and answers whether every line went
+// well; it stops at the first that did not.
+func Evaluate(s string) bool {
+	i := 0
+	for i < len(s) {
+		ntib = 0
+		for i < len(s) && s[i] != '\n' {
+			if ntib < len(tib) {
+				tib[ntib] = s[i]
+				ntib++
+			}
+			i++
+		}
+		i++
+		if !line() {
+			return false
+		}
+	}
+	return true
+}
+
+// accept reads a line from Key into tib, echoing it, and handles backspace.
+// A CR or LF ends it; an LF right after a CR is the same line's end.
+var lastCR bool
+
+func accept() {
+	ntib = 0
+	for {
+		c := byte(Key())
+		if c == '\n' && lastCR {
+			lastCR = false
+			continue
+		}
+		lastCR = c == '\r'
+		switch {
+		case c == '\r' || c == '\n':
+			emit(' ')
+			return
+		case c == 8 || c == 127:
+			if ntib > 0 {
+				ntib--
+				emit(8)
+				emit(' ')
+				emit(8)
+			}
+		case c < ' ':
+		default:
+			if ntib < len(tib) {
+				tib[ntib] = c
+				ntib++
+				emit(c)
+			}
+		}
+	}
+}
+
+// Quit is the REPL: it reads a line, interprets it and says ok, for ever.
+func Quit() {
+	for {
+		accept()
+		if line() {
+			if compiling() {
+				typeStr(" compiled")
+			} else {
+				typeStr(" ok")
+			}
+			emit('\n')
+		}
+	}
+}
+
+// Banner says what this is.
+func Banner() {
+	typeStr("OctoForth, a native-code Forth for the P2\n")
+}

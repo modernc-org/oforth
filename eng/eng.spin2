@@ -1,0 +1,906 @@
+' Copyright 2026 The oforth Authors. All rights reserved.
+' Use of this source code is governed by a BSD-style
+' license that can be found in the LICENSE file.
+
+' The engine: the entry into code compiled at run time, on the caller's cog,
+' and the PASM templates the compiler copies words from.
+'
+' The registers, which the backend leaves to the program ($1E0-$1EF): TOS is
+' the top of the data stack, the rest of which is in LUT 8 to 167 through
+' PTRB, growing up, with LUT 8 a cell nothing reads (a push writes the old
+' TOS there when the stack was empty) and LUT 0 to 7 catching an underflow;
+' the return stack is LUT 168 to 255 through RP, growing down. PB is a
+' word's link: a call is "calld pb, #\word", a return "jmp pb", and a word
+' that calls saves PB on the return stack first. LIX and LIM are the
+' innermost DO loop's index and limit, the outer loops' on the return stack.
+'
+' A trap is a word asking OctoGo for something: "mov rq, #id" and "calld
+' cont, back". run returns to OctoGo with the request in RQ and the
+' continuation in CONT; OctoGo serves it and calls run again at CONT with
+' fresh = 0, which leaves PB as the word left it.
+
+CON
+  tos   = $1E0          ' PR0
+  t1    = $1E1          ' PR1
+  rq    = $1E2          ' PR2, a trap's request
+  cont  = $1E3          ' PR3, a trap's continuation
+  t2    = $1E4          ' PR4
+  back  = $1E5          ' PR5, run's return point
+  rp    = $1E6          ' PR6, the return stack's index
+  dsp   = $1E7          ' PR7, PTRB kept between runs
+  lix   = $1E8          ' the innermost loop's index
+  lim   = $1E9          ' and its limit
+  t3    = $1EA
+  t4    = $1EB
+
+  DS0   = 8             ' PTRB of an empty data stack
+  DSMAX = 168           ' the first index past the data stack
+  RP0   = 256           ' RP of an empty return stack
+
+  ' A template's header long: its length in longs, and these.
+  F_CALLS  = $1_0000    ' calls: alone, it needs a frame
+  F_HIDDEN = $2_0000    ' the compiler's own, no word of the dictionary
+  F_IMM    = $4_0000    ' takes an immediate in the long at its slot
+  SLOT1    = $10_0000   ' the slot is the second long, not the first
+
+' run enters the code at xt and returns when it returns or traps, with the
+' clocks it took. fresh = 1 starts a word: PB is set to return here. fresh =
+' 0 resumes a trap's continuation and leaves PB alone.
+PUB run(xt, fresh) : cyc | t, t0
+  orgh
+                mov     t, ptrb
+                mov     ptrb, dsp
+                mov     rq, #0
+                getct   t0
+                calld   back, #enter
+                getct   cyc
+                mov     dsp, ptrb
+                mov     ptrb, t
+                sub     cyc, t0
+                jmp     #done
+enter
+                cmp     fresh, #0 wz
+        if_nz   mov     pb, back
+                jmp     xt
+done
+  end
+
+' start runs the code at xt on a free cog, in hub execution, with par in
+' PTRA. It answers the cog or -1.
+PUB start(xt, par) : cog
+  cog := coginit(HUBEXEC_NEW, xt, par)
+
+PUB templates() : a
+  a := @tb
+
+PUB refs() : a
+  a := @encref
+
+PUB setTos(v)
+  PR0 := v
+
+PUB getTos() : r
+  r := PR0
+
+PUB setDsp(v)
+  PR7 := v
+
+PUB getDsp() : r
+  r := PR7
+
+PUB setRp(v)
+  PR6 := v
+
+PUB getRp() : r
+  r := PR6
+
+PUB request() : r
+  r := PR2
+
+PUB continuation() : r
+  r := PR3
+
+PUB getPb() : r
+  r := PB
+
+PUB setPb(v)
+  PB := v
+
+PUB layout(i) : r
+  case i
+    0: r := DS0
+    1: r := DSMAX
+    2: r := RP0
+    other: r := -1
+
+' The templates. Each is a header long, the name, a zero, and the code from
+' the next long boundary; a header of -1 ends them. The compiler copies the
+' code into a word, so every template is position-independent: no branch out
+' of it, and a branch inside it relative. A name beginning with "~" is the
+' compiler's own and marked F_HIDDEN.
+DAT
+tb
+
+' The stack.
+              long    (@dup_e - @dup_b) >> 2
+              byte    "DUP", 0
+              alignl
+dup_b         wrlut   tos, ptrb++
+dup_e
+              long    (@drop_e - @drop_b) >> 2
+              byte    "DROP", 0
+              alignl
+drop_b        rdlut   tos, --ptrb
+drop_e
+              long    (@swap_e - @swap_b) >> 2
+              byte    "SWAP", 0
+              alignl
+swap_b        rdlut   t1, --ptrb
+              wrlut   tos, ptrb++
+              mov     tos, t1
+swap_e
+              long    (@over_e - @over_b) >> 2
+              byte    "OVER", 0
+              alignl
+over_b        wrlut   tos, ptrb++
+              rdlut   tos, ptrb[-2]
+over_e
+              long    (@rot_e - @rot_b) >> 2
+              byte    "ROT", 0
+              alignl
+rot_b         rdlut   t1, ptrb[-2]
+              rdlut   t2, ptrb[-1]
+              wrlut   t2, ptrb[-2]
+              wrlut   tos, ptrb[-1]
+              mov     tos, t1
+rot_e
+              long    (@mrot_e - @mrot_b) >> 2
+              byte    "-ROT", 0
+              alignl
+mrot_b        rdlut   t1, ptrb[-2]
+              rdlut   t2, ptrb[-1]
+              wrlut   tos, ptrb[-2]
+              wrlut   t1, ptrb[-1]
+              mov     tos, t2
+mrot_e
+              long    (@nip_e - @nip_b) >> 2
+              byte    "NIP", 0
+              alignl
+nip_b         sub     ptrb, #1
+nip_e
+              long    (@tuck_e - @tuck_b) >> 2
+              byte    "TUCK", 0
+              alignl
+tuck_b        rdlut   t1, ptrb[-1]
+              wrlut   tos, ptrb[-1]
+              wrlut   t1, ptrb++
+tuck_e
+              long    (@qdup_e - @qdup_b) >> 2
+              byte    "?DUP", 0
+              alignl
+qdup_b        test    tos wz
+        if_nz wrlut   tos, ptrb++
+qdup_e
+              long    (@ddup_e - @ddup_b) >> 2
+              byte    "2DUP", 0
+              alignl
+ddup_b        rdlut   t1, ptrb[-1]
+              wrlut   tos, ptrb++
+              wrlut   t1, ptrb++
+ddup_e
+              long    (@ddrop_e - @ddrop_b) >> 2
+              byte    "2DROP", 0
+              alignl
+ddrop_b       sub     ptrb, #1
+              rdlut   tos, --ptrb
+ddrop_e
+              long    (@dswap_e - @dswap_b) >> 2
+              byte    "2SWAP", 0
+              alignl
+dswap_b       rdlut   t1, ptrb[-3]
+              rdlut   t2, ptrb[-2]
+              rdlut   t3, ptrb[-1]
+              wrlut   t3, ptrb[-3]
+              wrlut   tos, ptrb[-2]
+              wrlut   t1, ptrb[-1]
+              mov     tos, t2
+dswap_e
+              long    (@dover_e - @dover_b) >> 2
+              byte    "2OVER", 0
+              alignl
+dover_b       rdlut   t1, ptrb[-3]
+              rdlut   t2, ptrb[-2]
+              wrlut   tos, ptrb++
+              wrlut   t1, ptrb++
+              mov     tos, t2
+dover_e
+              long    (@pick_e - @pick_b) >> 2
+              byte    "PICK", 0
+              alignl
+pick_b        mov     t1, ptrb
+              sub     t1, tos
+              sub     t1, #1
+              rdlut   tos, t1
+pick_e
+              long    (@depth_e - @depth_b) >> 2
+              byte    "DEPTH", 0
+              alignl
+depth_b       wrlut   tos, ptrb++
+              mov     tos, ptrb
+              sub     tos, #DS0 + 1
+depth_e
+              long    (@tor_e - @tor_b) >> 2
+              byte    ">R", 0
+              alignl
+tor_b         sub     rp, #1
+              wrlut   tos, rp
+              rdlut   tos, --ptrb
+tor_e
+              long    (@rfrom_e - @rfrom_b) >> 2
+              byte    "R>", 0
+              alignl
+rfrom_b       wrlut   tos, ptrb++
+              rdlut   tos, rp
+              add     rp, #1
+rfrom_e
+              long    (@rfetch_e - @rfetch_b) >> 2
+              byte    "R@", 0
+              alignl
+rfetch_b      wrlut   tos, ptrb++
+              rdlut   tos, rp
+rfetch_e
+              long    (@dtor_e - @dtor_b) >> 2
+              byte    "2>R", 0
+              alignl
+dtor_b        rdlut   t1, --ptrb
+              sub     rp, #1
+              wrlut   t1, rp
+              sub     rp, #1
+              wrlut   tos, rp
+              rdlut   tos, --ptrb
+dtor_e
+              long    (@drfrom_e - @drfrom_b) >> 2
+              byte    "2R>", 0
+              alignl
+drfrom_b      wrlut   tos, ptrb++
+              rdlut   t1, rp
+              add     rp, #1
+              rdlut   t2, rp
+              add     rp, #1
+              wrlut   t2, ptrb++
+              mov     tos, t1
+drfrom_e
+              long    (@drfetch_e - @drfetch_b) >> 2
+              byte    "2R@", 0
+              alignl
+drfetch_b     wrlut   tos, ptrb++
+              mov     t2, rp
+              add     t2, #1
+              rdlut   t1, t2
+              wrlut   t1, ptrb++
+              rdlut   tos, rp
+drfetch_e
+
+' Arithmetic and logic. A flag is -1 or 0.
+              long    (@plus_e - @plus_b) >> 2
+              byte    "+", 0
+              alignl
+plus_b        rdlut   t1, --ptrb
+              add     tos, t1
+plus_e
+              long    (@minus_e - @minus_b) >> 2
+              byte    "-", 0
+              alignl
+minus_b       rdlut   t1, --ptrb
+              subr    tos, t1
+minus_e
+              long    (@star_e - @star_b) >> 2
+              byte    "*", 0
+              alignl
+star_b        rdlut   t1, --ptrb
+              qmul    t1, tos
+              getqx   tos
+star_e
+              long    (@slash_e - @slash_b) >> 2
+              byte    "/", 0
+              alignl
+slash_b       rdlut   t1, --ptrb
+              abs     t1 wc
+              wrc     t3
+              abs     t2, tos wc
+              qdiv    t1, t2
+              getqx   tos
+              testb   t3, #0 xorc
+              negc    tos
+slash_e
+              long    (@mod_e - @mod_b) >> 2
+              byte    "MOD", 0
+              alignl
+mod_b         rdlut   t1, --ptrb
+              abs     t1 wc
+              wrc     t3
+              abs     t2, tos
+              qdiv    t1, t2
+              getqy   tos
+              testb   t3, #0 wc
+              negc    tos
+mod_e
+              long    (@smod_e - @smod_b) >> 2
+              byte    "/MOD", 0
+              alignl
+smod_b        rdlut   t1, --ptrb
+              abs     t1 wc
+              wrc     t3
+              abs     t2, tos wc
+              wrc     t4
+              qdiv    t1, t2
+              getqx   tos
+              getqy   t2
+              testb   t3, #0 wc
+              negc    t2
+              wrlut   t2, ptrb++
+              testb   t3, #0 wc
+              testb   t4, #0 xorc
+              negc    tos
+smod_e
+              long    (@umstar_e - @umstar_b) >> 2
+              byte    "UM*", 0
+              alignl
+umstar_b      rdlut   t1, --ptrb
+              qmul    t1, tos
+              getqx   t1
+              getqy   tos
+              wrlut   t1, ptrb++
+umstar_e
+              long    (@mstar_e - @mstar_b) >> 2
+              byte    "M*", 0
+              alignl
+mstar_b       rdlut   t1, --ptrb
+              qmul    t1, tos
+              getqx   t2
+              getqy   t3
+              testb   t1, #31 wc
+        if_c  sub     t3, tos
+              testb   tos, #31 wc
+        if_c  sub     t3, t1
+              wrlut   t2, ptrb++
+              mov     tos, t3
+mstar_e
+              long    (@ummod_e - @ummod_b) >> 2
+              byte    "UM/MOD", 0
+              alignl
+ummod_b       rdlut   t2, --ptrb
+              rdlut   t1, --ptrb
+              setq    t2
+              qdiv    t1, tos
+              getqx   t1
+              getqy   t2
+              wrlut   t2, ptrb++
+              mov     tos, t1
+ummod_e
+              long    (@negate_e - @negate_b) >> 2
+              byte    "NEGATE", 0
+              alignl
+negate_b      neg     tos
+negate_e
+              long    (@abs_e - @abs_b) >> 2
+              byte    "ABS", 0
+              alignl
+abs_b         abs     tos
+abs_e
+              long    (@min_e - @min_b) >> 2
+              byte    "MIN", 0
+              alignl
+min_b         rdlut   t1, --ptrb
+              fles    tos, t1
+min_e
+              long    (@max_e - @max_b) >> 2
+              byte    "MAX", 0
+              alignl
+max_b         rdlut   t1, --ptrb
+              fges    tos, t1
+max_e
+              long    (@inc_e - @inc_b) >> 2
+              byte    "1+", 0
+              alignl
+inc_b         add     tos, #1
+inc_e
+              long    (@dec_e - @dec_b) >> 2
+              byte    "1-", 0
+              alignl
+dec_b         sub     tos, #1
+dec_e
+              long    (@twostar_e - @twostar_b) >> 2
+              byte    "2*", 0
+              alignl
+twostar_b     shl     tos, #1
+twostar_e
+              long    (@twoslash_e - @twoslash_b) >> 2
+              byte    "2/", 0
+              alignl
+twoslash_b    sar     tos, #1
+twoslash_e
+              long    (@and_e - @and_b) >> 2
+              byte    "AND", 0
+              alignl
+and_b         rdlut   t1, --ptrb
+              and     tos, t1
+and_e
+              long    (@or_e - @or_b) >> 2
+              byte    "OR", 0
+              alignl
+or_b          rdlut   t1, --ptrb
+              or      tos, t1
+or_e
+              long    (@xor_e - @xor_b) >> 2
+              byte    "XOR", 0
+              alignl
+xor_b         rdlut   t1, --ptrb
+              xor     tos, t1
+xor_e
+              long    (@invert_e - @invert_b) >> 2
+              byte    "INVERT", 0
+              alignl
+invert_b      not     tos
+invert_e
+              long    (@lshift_e - @lshift_b) >> 2
+              byte    "LSHIFT", 0
+              alignl
+lshift_b      rdlut   t1, --ptrb
+              shl     t1, tos
+              mov     tos, t1
+lshift_e
+              long    (@rshift_e - @rshift_b) >> 2
+              byte    "RSHIFT", 0
+              alignl
+rshift_b      rdlut   t1, --ptrb
+              shr     t1, tos
+              mov     tos, t1
+rshift_e
+              long    (@eq_e - @eq_b) >> 2
+              byte    "=", 0
+              alignl
+eq_b          rdlut   t1, --ptrb
+              cmp     t1, tos wz
+              wrz     tos
+              neg     tos
+eq_e
+              long    (@ne_e - @ne_b) >> 2
+              byte    "<>", 0
+              alignl
+ne_b          rdlut   t1, --ptrb
+              cmp     t1, tos wz
+              wrnz    tos
+              neg     tos
+ne_e
+              long    (@lt_e - @lt_b) >> 2
+              byte    "<", 0
+              alignl
+lt_b          rdlut   t1, --ptrb
+              cmps    t1, tos wc
+              wrc     tos
+              neg     tos
+lt_e
+              long    (@gt_e - @gt_b) >> 2
+              byte    ">", 0
+              alignl
+gt_b          rdlut   t1, --ptrb
+              cmps    tos, t1 wc
+              wrc     tos
+              neg     tos
+gt_e
+              long    (@ult_e - @ult_b) >> 2
+              byte    "U<", 0
+              alignl
+ult_b         rdlut   t1, --ptrb
+              cmp     t1, tos wc
+              wrc     tos
+              neg     tos
+ult_e
+              long    (@ugt_e - @ugt_b) >> 2
+              byte    "U>", 0
+              alignl
+ugt_b         rdlut   t1, --ptrb
+              cmp     tos, t1 wc
+              wrc     tos
+              neg     tos
+ugt_e
+              long    (@zeq_e - @zeq_b) >> 2
+              byte    "0=", 0
+              alignl
+zeq_b         test    tos wz
+              wrz     tos
+              neg     tos
+zeq_e
+              long    (@zne_e - @zne_b) >> 2
+              byte    "0<>", 0
+              alignl
+zne_b         test    tos wz
+              wrnz    tos
+              neg     tos
+zne_e
+              long    (@zlt_e - @zlt_b) >> 2
+              byte    "0<", 0
+              alignl
+zlt_b         sar     tos, #31
+zlt_e
+              long    (@zgt_e - @zgt_b) >> 2
+              byte    "0>", 0
+              alignl
+zgt_b         cmps    tos, #1 wc
+              wrnc    tos
+              neg     tos
+zgt_e
+              long    (@within_e - @within_b) >> 2
+              byte    "WITHIN", 0
+              alignl
+within_b      rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              sub     tos, t1
+              sub     t2, t1
+              cmp     t2, tos wc
+              wrc     tos
+              neg     tos
+within_e
+              long    (@true_e - @true_b) >> 2
+              byte    "TRUE", 0
+              alignl
+true_b        wrlut   tos, ptrb++
+              neg     tos, #1
+true_e
+              long    (@false_e - @false_b) >> 2
+              byte    "FALSE", 0
+              alignl
+false_b       wrlut   tos, ptrb++
+              mov     tos, #0
+false_e
+              long    (@bl_e - @bl_b) >> 2
+              byte    "BL", 0
+              alignl
+bl_b          wrlut   tos, ptrb++
+              mov     tos, #32
+bl_e
+
+' Memory. An address is a hub address.
+              long    (@fetch_e - @fetch_b) >> 2
+              byte    "@", 0
+              alignl
+fetch_b       rdlong  tos, tos
+fetch_e
+              long    (@store_e - @store_b) >> 2
+              byte    "!", 0
+              alignl
+store_b       rdlut   t1, --ptrb
+              wrlong  t1, tos
+              rdlut   tos, --ptrb
+store_e
+              long    (@cfetch_e - @cfetch_b) >> 2
+              byte    "C@", 0
+              alignl
+cfetch_b      rdbyte  tos, tos
+cfetch_e
+              long    (@cstore_e - @cstore_b) >> 2
+              byte    "C!", 0
+              alignl
+cstore_b      rdlut   t1, --ptrb
+              wrbyte  t1, tos
+              rdlut   tos, --ptrb
+cstore_e
+              long    (@wfetch_e - @wfetch_b) >> 2
+              byte    "W@", 0
+              alignl
+wfetch_b      rdword  tos, tos
+wfetch_e
+              long    (@wstore_e - @wstore_b) >> 2
+              byte    "W!", 0
+              alignl
+wstore_b      rdlut   t1, --ptrb
+              wrword  t1, tos
+              rdlut   tos, --ptrb
+wstore_e
+              long    (@pstore_e - @pstore_b) >> 2
+              byte    "+!", 0
+              alignl
+pstore_b      rdlut   t1, --ptrb
+              rdlong  t2, tos
+              add     t2, t1
+              wrlong  t2, tos
+              rdlut   tos, --ptrb
+pstore_e
+              long    (@dfetch_e - @dfetch_b) >> 2
+              byte    "2@", 0
+              alignl
+dfetch_b      mov     t1, tos
+              add     t1, #4
+              rdlong  t1, t1
+              rdlong  tos, tos
+              wrlut   t1, ptrb++
+dfetch_e
+              long    (@dstore_e - @dstore_b) >> 2
+              byte    "2!", 0
+              alignl
+dstore_b      rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              wrlong  t1, tos
+              add     tos, #4
+              wrlong  t2, tos
+              rdlut   tos, --ptrb
+dstore_e
+              long    (@cellp_e - @cellp_b) >> 2
+              byte    "CELL+", 0
+              alignl
+cellp_b       add     tos, #4
+cellp_e
+              long    (@cells_e - @cells_b) >> 2
+              byte    "CELLS", 0
+              alignl
+cells_b       shl     tos, #2
+cells_e
+              long    (@charp_e - @charp_b) >> 2
+              byte    "CHAR+", 0
+              alignl
+charp_b       add     tos, #1
+charp_e
+              long    (@chars_e - @chars_b) >> 2
+              byte    "CHARS", 0
+              alignl
+chars_b
+chars_e
+              long    (@count_e - @count_b) >> 2
+              byte    "COUNT", 0
+              alignl
+count_b       rdbyte  t1, tos
+              add     tos, #1
+              wrlut   tos, ptrb++
+              mov     tos, t1
+count_e
+
+' Loops, calls and the P2.
+              long    (@i_e - @i_b) >> 2
+              byte    "I", 0
+              alignl
+i_b           wrlut   tos, ptrb++
+              mov     tos, lix
+i_e
+              long    (@j_e - @j_b) >> 2
+              byte    "J", 0
+              alignl
+j_b           wrlut   tos, ptrb++
+              mov     t1, rp
+              add     t1, #1
+              rdlut   tos, t1
+j_e
+              long    (@unloop_e - @unloop_b) >> 2
+              byte    "UNLOOP", 0
+              alignl
+unloop_b      rdlut   lim, rp
+              add     rp, #1
+              rdlut   lix, rp
+              add     rp, #1
+unloop_e
+              long    (@execute_e - @execute_b) >> 2 | F_CALLS
+              byte    "EXECUTE", 0
+              alignl
+execute_b     mov     t1, tos
+              rdlut   tos, --ptrb
+              calld   pb, t1
+execute_e
+              long    (@getct_e - @getct_b) >> 2
+              byte    "GETCT", 0
+              alignl
+getct_b       wrlut   tos, ptrb++
+              getct   tos
+getct_e
+              long    (@cogid_e - @cogid_b) >> 2
+              byte    "COGID", 0
+              alignl
+cogid_b       wrlut   tos, ptrb++
+              cogid   tos
+cogid_e
+
+' The compiler's own: what a literal, a call, a branch, a frame, a trap and a
+' loop are made of, and the forms a primitive takes with a literal folded in.
+              long    (@lit_e - @lit_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~lit", 0
+              alignl
+lit_b         mov     tos, #0
+lit_e
+              long    (@nlit_e - @nlit_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~nlit", 0
+              alignl
+nlit_b        neg     tos, #0
+nlit_e
+              long    (@augs_e - @augs_b) >> 2 | F_HIDDEN
+              byte    "~augs", 0
+              alignl
+augs_b        augs    #0
+augs_e
+              long    (@call_e - @call_b) >> 2 | F_HIDDEN
+              byte    "~call", 0
+              alignl
+call_b        calld   pb, #\0
+call_e
+              long    (@jmp_e - @jmp_b) >> 2 | F_HIDDEN
+              byte    "~jmp", 0
+              alignl
+jmp_b         jmp     #\0
+jmp_e
+              long    (@jz_e - @jz_b) >> 2 | F_HIDDEN
+              byte    "~jz", 0
+              alignl
+jz_b    if_z  jmp     #\0
+jz_e
+              long    (@jnz_e - @jnz_b) >> 2 | F_HIDDEN
+              byte    "~jnz", 0
+              alignl
+jnz_b   if_nz jmp     #\0
+jnz_e
+              long    (@jnc_e - @jnc_b) >> 2 | F_HIDDEN
+              byte    "~jnc", 0
+              alignl
+jnc_b   if_nc jmp     #\0
+jnc_e
+              long    (@cif_e - @cif_b) >> 2 | F_HIDDEN
+              byte    "~if", 0
+              alignl
+cif_b         test    tos wz
+              rdlut   tos, --ptrb
+cif_e
+              long    (@enter_e - @enter_b) >> 2 | F_HIDDEN
+              byte    "~enter", 0
+              alignl
+enter_b       sub     rp, #1
+              wrlut   pb, rp
+enter_e
+              long    (@exit_e - @exit_b) >> 2 | F_HIDDEN
+              byte    "~exit", 0
+              alignl
+exit_b        rdlut   pb, rp
+              add     rp, #1
+              jmp     pb
+exit_e
+              long    (@ret_e - @ret_b) >> 2 | F_HIDDEN
+              byte    "~ret", 0
+              alignl
+ret_b         jmp     pb
+ret_e
+              long    (@trap_e - @trap_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~trap", 0
+              alignl
+trap_b        mov     rq, #0
+              calld   cont, back
+trap_e
+              long    (@do_e - @do_b) >> 2 | F_HIDDEN
+              byte    "~do", 0
+              alignl
+do_b          sub     rp, #1
+              wrlut   lix, rp
+              sub     rp, #1
+              wrlut   lim, rp
+              mov     lix, tos
+              rdlut   lim, --ptrb
+              rdlut   tos, --ptrb
+do_e
+              long    (@qdo_e - @qdo_b) >> 2 | F_HIDDEN
+              byte    "~qdo", 0
+              alignl
+qdo_b         cmp     lix, lim wz
+qdo_e
+              long    (@loop_e - @loop_b) >> 2 | F_HIDDEN
+              byte    "~loop", 0
+              alignl
+loop_b        add     lix, #1
+              cmp     lix, lim wz
+loop_e
+              long    (@ploop_e - @ploop_b) >> 2 | F_HIDDEN
+              byte    "~+loop", 0
+              alignl
+ploop_b       mov     t1, lix
+              sub     t1, lim
+              add     t1, tos wc
+              testb   tos, #31 xorc
+              add     lix, tos
+              rdlut   tos, --ptrb
+ploop_e
+              long    (@fplus_e - @fplus_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~+", 0
+              alignl
+fplus_b       add     tos, #0
+fplus_e
+              long    (@fminus_e - @fminus_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~-", 0
+              alignl
+fminus_b      sub     tos, #0
+fminus_e
+              long    (@fstar_e - @fstar_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~*", 0
+              alignl
+fstar_b       qmul    tos, #0
+              getqx   tos
+fstar_e
+              long    (@fand_e - @fand_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~AND", 0
+              alignl
+fand_b        and     tos, #0
+fand_e
+              long    (@for_e - @for_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~OR", 0
+              alignl
+for_b         or      tos, #0
+for_e
+              long    (@fxor_e - @fxor_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~XOR", 0
+              alignl
+fxor_b        xor     tos, #0
+fxor_e
+              long    (@flshift_e - @flshift_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~LSHIFT", 0
+              alignl
+flshift_b     shl     tos, #0
+flshift_e
+              long    (@frshift_e - @frshift_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~RSHIFT", 0
+              alignl
+frshift_b     shr     tos, #0
+frshift_e
+              long    (@feq_e - @feq_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~=", 0
+              alignl
+feq_b         cmp     tos, #0 wz
+              wrz     tos
+              neg     tos
+feq_e
+              long    (@fne_e - @fne_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~<>", 0
+              alignl
+fne_b         cmp     tos, #0 wz
+              wrnz    tos
+              neg     tos
+fne_e
+              long    (@flt_e - @flt_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~<", 0
+              alignl
+flt_b         cmps    tos, #0 wc
+              wrc     tos
+              neg     tos
+flt_e
+              long    (@ffetch_e - @ffetch_b) >> 2 | F_HIDDEN | F_IMM | SLOT1
+              byte    "~@", 0
+              alignl
+ffetch_b      wrlut   tos, ptrb++
+              rdlong  tos, #0
+ffetch_e
+              long    (@fstore_e - @fstore_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~!", 0
+              alignl
+fstore_b      wrlong  tos, #0
+              rdlut   tos, --ptrb
+fstore_e
+              long    (@fcfetch_e - @fcfetch_b) >> 2 | F_HIDDEN | F_IMM | SLOT1
+              byte    "~C@", 0
+              alignl
+fcfetch_b     wrlut   tos, ptrb++
+              rdbyte  tos, #0
+fcfetch_e
+              long    (@fcstore_e - @fcstore_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~C!", 0
+              alignl
+fcstore_b     wrbyte  tos, #0
+              rdlut   tos, --ptrb
+fcstore_e
+              long    -1
+
+' What the encoder must make of the templates, as flexspin assembles it, for
+' the test of the encoder.
+encref        calld   pb, #\$12344
+              jmp     #\$1F000
+        if_z  jmp     #\$40000
+        if_nz jmp     #\$7FFFC
+        if_nc jmp     #\$400
+              mov     tos, ##$12345
+              neg     tos, #5
+              add     tos, ##100000
+              wrlut   tos, ptrb++
+              rdlong  tos, ##$7FFF0
+              mov     rq, #300
+              calld   cont, back

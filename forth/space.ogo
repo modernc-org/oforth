@@ -1,0 +1,87 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import "unsafe"
+
+// The two spaces. Code is P2 instructions, written by the compiler and run
+// where they are; data is the space HERE, ALLOT and "," address, which ANS
+// Forth calls the data space. They are apart so that data laid down after a
+// CREATE never lands in the middle of code. Both are hub RAM, and a Forth
+// address is a hub address.
+const (
+	codeLongs = 32768 // 128 KB
+	dataLongs = 16384 // 64 KB
+
+	// The cells at the bottom of the data space that the system keeps.
+	cellBase  = 0 // BASE
+	cellState = 1 // STATE
+	dataFirst = 8 // the first byte HERE starts at
+)
+
+var (
+	code [codeLongs]uint32
+	cp   int // the next free long of the code space
+
+	data [dataLongs]uint32
+	dp   uint32 // the next free byte of the data space, from its start
+)
+
+func codeAddr(i int) uint32 {
+	return uint32(uintptr(unsafe.Pointer(&code[0]))) + uint32(i)*4
+}
+
+func dataBase() uint32 { return uint32(uintptr(unsafe.Pointer(&data[0]))) }
+
+func here() uint32 { return dataBase() + dp }
+
+func peek(a uint32) uint32 { return *(*uint32)(unsafe.Pointer(uintptr(a))) }
+
+func poke(a, v uint32) { *(*uint32)(unsafe.Pointer(uintptr(a))) = v }
+
+func peekb(a uint32) byte { return *(*byte)(unsafe.Pointer(uintptr(a))) }
+
+func pokeb(a uint32, v byte) { *(*byte)(unsafe.Pointer(uintptr(a))) = v }
+
+// allot moves HERE on by n bytes, which may be negative, and answers false,
+// having aborted, when that leaves the data space.
+func allot(n int32) bool {
+	d := int32(dp) + n
+	if d < dataFirst || d > dataLongs*4 {
+		abort("data space")
+		return false
+	}
+	dp = uint32(d)
+	return true
+}
+
+func align() {
+	for dp&3 != 0 {
+		dp++
+	}
+}
+
+func comma(v uint32) {
+	a := here()
+	if allot(4) {
+		poke(a, v)
+	}
+}
+
+func ccomma(v byte) {
+	a := here()
+	if allot(1) {
+		pokeb(a, v)
+	}
+}
+
+func base() uint32 { return data[cellBase] }
+
+func compiling() bool { return data[cellState] != 0 }
+
+func setCompiling(on bool) {
+	data[cellState] = 0
+	if on {
+		data[cellState] = 0xffffffff
+	}
+}

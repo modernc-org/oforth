@@ -1,0 +1,49 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Command oforth is OctoForth's REPL on the serial line: a Forth that
+// compiles every colon definition to P2 machine code as it is defined.
+//
+// A cog does nothing but read the serial line into a ring, because nothing
+// buffers behind p2.ReadByte and a byte that arrives while the REPL compiles
+// is lost; pasted source arrives faster than a line is compiled.
+
+import (
+	"p2"
+
+	"modernc.org/oforth/forth"
+)
+
+// ringN must be a power of two.
+const ringN = 4096
+
+var (
+	ring [ringN]byte
+	head int // written by the reader only
+	tail int // written by the REPL only
+)
+
+func reader() {
+	for {
+		ring[head&(ringN-1)] = byte(p2.ReadByte(0))
+		head++
+	}
+}
+
+func key() int {
+	for tail == head {
+	}
+	c := ring[tail&(ringN-1)]
+	tail++
+	return int(c)
+}
+
+func main() {
+	go reader()
+	forth.Console = true
+	forth.Key = key
+	forth.Init()
+	forth.Banner()
+	forth.Quit()
+}

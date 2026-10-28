@@ -1,0 +1,143 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The dictionary: a header per word in an array, the names in another, and a
+// hash table of chains over them, newest first, as IPS had in 1979. Names are
+// found regardless of case and kept as they were defined.
+const (
+	maxWords  = 1024
+	nameBytes = 12288
+	buckets   = 256 // a power of two
+)
+
+// What a word is.
+const (
+	kPrim  = iota // a template, copied into the words that use it
+	kColon        // code with a frame, called
+	kOcto         // OctoGo's: a trap where it is compiled
+	kConst        // pushes val: a CONSTANT, VARIABLE or CREATE
+)
+
+const (
+	fImmediate = 1 << iota
+	fHidden    // a definition not yet ended
+	fCompile   // compile only
+)
+
+type word struct {
+	name  int32 // where the name is in names
+	nlen  uint8
+	kind  uint8
+	flags uint8
+	next  int32  // the next word of the bucket, -1 at the end
+	xt    uint32 // the code that executes the word, which every word has
+	id    int32  // the template of a kPrim, the number of a kOcto
+	val   uint32 // what a kConst pushes
+}
+
+var (
+	words  [maxWords]word
+	nwords int
+	names  [nameBytes]byte
+	nnames int
+	bucket [buckets]int32
+)
+
+func upper(c byte) byte {
+	if c >= 'a' && c <= 'z' {
+		return c - 'a' + 'A'
+	}
+	return c
+}
+
+func hash(s []byte) int {
+	h := uint32(2166136261)
+	for _, c := range s {
+		h = (h ^ uint32(upper(c))) * 16777619
+	}
+	return int(h & (buckets - 1))
+}
+
+func nameIs(w int, s []byte) bool {
+	if int(words[w].nlen) != len(s) {
+		return false
+	}
+	n := int(words[w].name)
+	for i, c := range s {
+		if upper(names[n+i]) != upper(c) {
+			return false
+		}
+	}
+	return true
+}
+
+// find answers the newest visible word named s, or -1.
+func find(s []byte) int {
+	for w := int(bucket[hash(s)]); w >= 0; w = int(words[w].next) {
+		if words[w].flags&fHidden == 0 && nameIs(w, s) {
+			return w
+		}
+	}
+	return -1
+}
+
+// define adds a header and answers it, or -1, having aborted.
+func define(s []byte, kind, flags uint8) int {
+	if len(s) == 0 || len(s) > 31 {
+		abort("bad name")
+		return -1
+	}
+	if nwords == maxWords || nnames+len(s) > nameBytes {
+		abort("dictionary full")
+		return -1
+	}
+	w := nwords
+	nwords++
+	words[w].name = int32(nnames)
+	words[w].nlen = uint8(len(s))
+	for _, c := range s {
+		names[nnames] = c
+		nnames++
+	}
+	words[w].kind = kind
+	words[w].flags = flags
+	words[w].xt = 0
+	words[w].id = 0
+	words[w].val = 0
+	h := hash(s)
+	words[w].next = bucket[h]
+	bucket[h] = int32(w)
+	return w
+}
+
+// defineStr is define of a name the system gives.
+func defineStr(s string, kind, flags uint8) int {
+	var b [32]byte
+	n := len(s)
+	if n > len(b) {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		b[i] = s[i]
+	}
+	return define(b[:n], kind, flags)
+}
+
+// forget removes the newest word, which is the first of its bucket.
+func forget() {
+	if nwords == 0 {
+		return
+	}
+	w := nwords - 1
+	n := int(words[w].name)
+	h := hash(names[n : n+int(words[w].nlen)])
+	bucket[h] = words[w].next
+	nnames = n
+	nwords = w
+}
+
+func wordName(w int) []byte {
+	n := int(words[w].name)
+	return names[n : n+int(words[w].nlen)]
+}

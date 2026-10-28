@@ -291,8 +291,8 @@ glossary. And the whole forum thread, `forum/176239/`, 22 posts from
   the CT3 event, then a LUT entry holding the word to run, a register being
   too scarce to spend. "I think, that the idea to hook the task switch into
   EXIT is a good idea, because this will slow down the system very little,
-  as only compound words will be affected." Both are open points for
-  section 9; the event is polled, not taken as an interrupt, which matters
+  as only compound words will be affected." Section 9 has what was
+  decided of both; the event is polled, not taken as an interrupt, which matters
   in a flexspin cog (section 4, "The P2's timings").
 
 ### 3.3 pfth and the P1 Forths
@@ -815,8 +815,8 @@ word cannot call an OctoGo function, only ask the REPL to.
 **The call: A for the REPL, with B's image for `RUN`**, the generated code
 written to run on either, which costs it nothing since the sixteen registers
 and the LUT are enough; and B alone if A had failed. M0 found both working
-(section 4, "Probe M0"), so the call stands, for the user to confirm with
-the open points of section 9.
+(section 4, "Probe M0"), so the call stands, for the user confirmed
+with the decisions of section 9.
 
 **The engine's register file.** The data stack pointer is PTRB, so a push is
 `wrlut tos, ptrb++` and a pop `rdlut tos, --ptrb`, 2 and 3 clocks. Of the
@@ -895,10 +895,19 @@ the comparison the forum post rests on.
 | | What it shows | Mostly |
 | --- | --- | --- |
 | M0 | **Done 2026-10-28** (section 4, "Probe M0"; `probe/m0`). The probe: a Spin2 object with the hub-resident `run(xt)`, a word hand-assembled into a hub array by OctoGo, run on the main cog and back; the trap to OctoGo and back; `calld`+LUT against `calla`/`reta` for a call; `+`, `@`, a literal, a loop iteration, measured against section 3.6; the same word on an engine cog. Decides A or B and the return stack. | board, one or two sessions |
-| M1 | The kernel: about sixty primitives as PASM templates, the encoder with its host test against flexspin's assembler, `: ;`, literals with folding, IF ELSE THEN, BEGIN UNTIL WHILE REPEAT, DO LOOP +LOOP, the dictionary, the REPL on the serial line, `.` and `.S` | OctoGo, PASM |
+| M1 | **Done 2026-10-28**, with two changes: the encoder's test runs on the board, against what flexspin assembled of the same instructions into the engine's DAT, not on the host; and the inlining of small colon words, which section 5 had in from the start, moved to M4 with the rest of the speed work. The kernel: about sixty primitives as PASM templates, the encoder with its host test against flexspin's assembler, `: ;`, literals with folding, IF ELSE THEN, BEGIN UNTIL WHILE REPEAT, DO LOOP +LOOP, the dictionary, the REPL on the serial line, `.` and `.S` | OctoGo, PASM |
 | M2 | CREATE DOES>, VARIABLE CONSTANT, IMMEDIATE POSTPONE `'` `[']` EXECUTE, `."` `S"`, the pictured numbers, comments, `SEE` (a disassembler of the generated code, which debugging needs anyway); the sieve, the empty loop and `fBench` (the recursive factorial, section 3.2) against TAQOZ and P2XCForth on the same board | breadth, the numbers |
 | M3 | The P2 words; `RUN` on a cog with the engine image; the embedding API, `import "oforth"`, with a table of OctoGo functions a program exports as words; a Forth monitor in one of the sibling programs as the demo | multi-cog, interop |
 | M4 | Inlining of small words measured; the cog cache for hot loops and `REP`; `INCLUDE` from the SD card through p2-11's `fat`; the forum post | speed, the showcase |
+
+M1's first numbers, on the P2-EDGE at 160 MHz with ogo
+v0.58.1-0.20261025171618, in clocks: an empty `DO LOOP` iteration 24
+(TAQOZ 32, P2XCForth 72); a call and return of an empty colon word 40, its
+frame included (P2XCForth 70); P2XCForth's own sieve source, one pass,
+2,107,257, of which `FILL`, written in OctoGo byte by byte, 378,290, against
+6,654,800 for P2XCForth's best (33,274 us at 200 MHz, its author's figure);
+`25 fib` 18,118,669. The comparison on one board, with both systems'
+loops shown, stays M2's.
 
 M0 to M2 is the experiment the user asked about, answered with numbers; M3
 is what makes it different from every Forth on the P2; M4 is polish. At
@@ -980,30 +989,37 @@ blocking for long, the ogo session being a directory away.
   assembler run on the host through `ogo`'s embedded backend, may become a
   script other projects use.
 
-## 9. Open points for the discussion
+## 9. Decisions of 2026-10-28
 
-1. A or B as the home of the REPL, or A with B for `RUN` as proposed: M0
-   found both working, with traps from A into OctoGo at 228 clocks; the
-   user decides.
-2. The return stack: the C stack (PTRA, CALLA/RETA), which echoes the 8080
-   design, or the LUT with PB as a link register. M0 measured 70 clocks a
-   call and return against 34 plus 8 for a calling word; the LUT is
-   proposed.
-3. How Forth-standard: ANS CORE as the target with the P2 words beside it
-   (proposed), or TAQOZ's dialect so its users' scripts carry over.
-4. Where the console lives: `printf` and `p2.ReadByte` on the main cog
-   (proposed), or a serial driver on a cog of its own, as P2XCForth's
-   buffered input cog is.
-5. The name of the engine's words for cogs: `RUN` (TAQOZ's word) or `GO`.
-6. Whether the first demo is the REPL alone or a monitor inside p2-11.
-7. Whether to take IPS's two ideas now: a hashed dictionary (cheap, yes) and
-   a task switch hooked into a word's return (a 2-clock `jnct3` per return
-   of a non-inlined word, polled, never an interrupt under design A; not in
-   version 1 unless measured free; the P2's cogs make it less pressing than
-   on one 1802).
-8. How far toward Mecrisp's RA kernel to go later: the stack model that
-   keeps the top cells in registers is the known 2 to 4 times beyond plain
-   inlining, and the sixteen registers would hold it.
+The open points of the discussion, settled by the user after probe M0, all
+as proposed:
+
+1. **Where the engine runs:** design A, the REPL's own cog, with B's image
+   for `RUN`. M0 found both working, with traps from A into OctoGo at 228
+   clocks.
+2. **The return stack:** the LUT with PB as the link register, 34 clocks a
+   call and return plus 8 for a calling word, against 70 for CALLA/RETA on
+   the C stack.
+3. **The dialect:** ANS CORE as the target, with the P2 words beside it; a
+   small compatibility file for TAQOZ's users may come later.
+4. **The console:** `printf` and `p2.ReadByte` on the main cog; a buffered
+   serial cog only if pasted source turns out to lose characters. It does,
+   by OctoGo's own measurement (`_examples/protocol`: "NOTHING IS BUFFERED
+   behind p2.ReadByte"), so M1 reads the line on a cog of its own into a
+   ring, still with `p2.ReadByte`, and writes with `p2.WriteByte`, `printf`'s
+   `%c` writing runes.
+5. **The word that runs a word on a cog:** `RUN`, TAQOZ's name.
+6. **The first demo:** the REPL alone, at M1 and M2. The embedding of M3 is
+   shown by a small example program in this repository that exports a few
+   of its functions (the board's LEDs and pins) as Forth words. A monitor
+   inside p2-11 is not this repository's to write: another session works
+   there, the embedding API exists only from M3, and p2-11's binary,
+   389,980 bytes, leaves about 130 KB of the hub, room for a small Forth
+   only. It may come later, as a joint step the user arranges.
+7. **IPS's ideas:** the hashed dictionary now; the task switch hooked into
+   a word's return later, and only if measured nearly free.
+8. **Mecrisp's register-allocating kernel:** considered after M2's numbers,
+   not before.
 
 ## 10. Housekeeping
 

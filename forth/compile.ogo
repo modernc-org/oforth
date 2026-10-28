@@ -1,0 +1,479 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import "modernc.org/oforth/eng"
+
+// The templates, as eng.spin2 lays them out: a header long, the name and a
+// zero, and the code from the next long. The compiler copies a template's
+// code into the word it compiles; that is all the encoding there is, but
+// for an immediate or an address ORed into the field the assembler left 0.
+const (
+	maxTemplates = 160
+
+	tfCalls  = 0x1_0000
+	tfHidden = 0x2_0000
+	tfImm    = 0x4_0000
+	tfSlot1  = 0x10_0000
+)
+
+var (
+	tAddr  [maxTemplates]uint32 // the code
+	tLen   [maxTemplates]int32  // in longs
+	tFlags [maxTemplates]uint32
+	tFold  [maxTemplates]int32 // the form with a literal folded in, or -1
+	tName  [maxTemplates]int32 // where the name is in tNames
+	tNlen  [maxTemplates]int32
+	tNames [2048]byte
+	ntpl   int
+
+	// The compiler's own templates, found by name.
+	tDup, tLit, tNlit, tAugs, tCall, tJmp, tJz, tJnz, tJnc, tIf   int
+	tEnter, tExit, tRet, tTrap, tDo, tQdo, tLoop, tPloop, tUnloop int
+	tFoldPlus, tFoldMinus, tPlus, tMinus                          int
+	ds0, dsMax, rp0                                               uint32
+)
+
+func tplLong(t, i int) uint32 { return peek(tAddr[t] + uint32(i)*4) }
+
+// loadTemplates reads the table, defines a word for each template that is
+// one, and finds the compiler's own.
+func loadTemplates() {
+	ds0 = eng.Layout(0)
+	dsMax = eng.Layout(1)
+	rp0 = eng.Layout(2)
+	nn := 0
+	p := eng.Templates()
+	for {
+		h := peek(p)
+		if h == 0xffffffff {
+			break
+		}
+		if ntpl == maxTemplates {
+			panic("too many templates")
+		}
+		t := ntpl
+		ntpl++
+		q := p + 4
+		tName[t] = int32(nn)
+		for peekb(q) != 0 {
+			if nn == len(tNames) {
+				panic("template names")
+			}
+			tNames[nn] = peekb(q)
+			nn++
+			q++
+		}
+		tNlen[t] = int32(nn) - tName[t]
+		q = (q + 4) &^ 3
+		tAddr[t] = q
+		tLen[t] = int32(h & 0xffff)
+		tFlags[t] = h
+		tFold[t] = -1
+		p = q + uint32(tLen[t])*4
+	}
+	tLit = hiddenTpl("~lit")
+	tNlit = hiddenTpl("~nlit")
+	tAugs = hiddenTpl("~augs")
+	tCall = hiddenTpl("~call")
+	tJmp = hiddenTpl("~jmp")
+	tJz = hiddenTpl("~jz")
+	tJnz = hiddenTpl("~jnz")
+	tJnc = hiddenTpl("~jnc")
+	tIf = hiddenTpl("~if")
+	tEnter = hiddenTpl("~enter")
+	tExit = hiddenTpl("~exit")
+	tRet = hiddenTpl("~ret")
+	tTrap = hiddenTpl("~trap")
+	tDo = hiddenTpl("~do")
+	tQdo = hiddenTpl("~qdo")
+	tLoop = hiddenTpl("~loop")
+	tPloop = hiddenTpl("~+loop")
+	tFoldPlus = hiddenTpl("~+")
+	tFoldMinus = hiddenTpl("~-")
+	for t := 0; t < ntpl; t++ {
+		if tFlags[t]&tfHidden != 0 {
+			continue
+		}
+		w := define(tNames[tName[t]:tName[t]+tNlen[t]], kPrim, 0)
+		words[w].id = int32(t)
+		words[w].xt = codeAddr(cp)
+		if tFlags[t]&tfCalls != 0 {
+			emitT(tEnter)
+			emitT(t)
+			emitT(tExit)
+		} else {
+			emitT(t)
+			emitT(tRet)
+		}
+	}
+	// Each hidden "~X" is the folded form of the primitive X.
+	for t := 0; t < ntpl; t++ {
+		n := int(tName[t])
+		if tFlags[t]&tfHidden == 0 || tNames[n] != '~' {
+			continue
+		}
+		w := find(tNames[n+1 : n+int(tNlen[t])])
+		if w >= 0 && words[w].kind == kPrim {
+			tFold[words[w].id] = int32(t)
+		}
+	}
+	tDup = primTpl("DUP")
+	tUnloop = primTpl("UNLOOP")
+	tPlus = primTpl("+")
+	tMinus = primTpl("-")
+}
+
+// hiddenTpl answers the template named s, which must exist.
+func hiddenTpl(s string) int {
+	for t := 0; t < ntpl; t++ {
+		if int(tNlen[t]) != len(s) {
+			continue
+		}
+		n := int(tName[t])
+		same := true
+		for i := 0; i < len(s); i++ {
+			if tNames[n+i] != s[i] {
+				same = false
+				break
+			}
+		}
+		if same {
+			return t
+		}
+	}
+	panic("a template is missing")
+}
+
+func primTpl(s string) int {
+	var b [16]byte
+	for i := 0; i < len(s); i++ {
+		b[i] = s[i]
+	}
+	w := find(b[:len(s)])
+	if w < 0 || words[w].kind != kPrim {
+		panic("a primitive is missing")
+	}
+	return int(words[w].id)
+}
+
+// The code being compiled.
+var (
+	pending  bool // a literal not yet compiled, for the next word to fold
+	pendingV uint32
+	current  int // the word being defined
+	startCp  int // where its code began, for an error to take it back
+	startW   int
+)
+
+func emitw(v uint32) {
+	if cp >= codeLongs {
+		abort("code space full")
+		return
+	}
+	code[cp] = v
+	cp++
+}
+
+func emitT(t int) {
+	for i := 0; i < int(tLen[t]); i++ {
+		emitw(tplLong(t, i))
+	}
+}
+
+// emitImm emits template t with v in its immediate field, preceded by an
+// AUGS for the bits above the nine an instruction holds.
+func emitImm(t int, v uint32) {
+	slot := 0
+	if tFlags[t]&tfSlot1 != 0 {
+		slot = 1
+	}
+	for i := 0; i < int(tLen[t]); i++ {
+		w := tplLong(t, i)
+		if i == slot {
+			if v > 511 {
+				emitw(tplLong(tAugs, 0) | v>>9)
+				v &= 511
+			}
+			w |= v
+		}
+		emitw(w)
+	}
+}
+
+// emitAbs emits a call or a branch to the hub address a.
+func emitAbs(t int, a uint32) {
+	emitw(tplLong(t, 0) | a&0xfffff)
+}
+
+// resolve points the branch at code[at] to a.
+func resolve(at int, a uint32) {
+	code[at] = code[at]&^0xfffff | a&0xfffff
+}
+
+func emitLit(v uint32) {
+	emitT(tDup)
+	switch {
+	case v <= 511:
+		emitImm(tLit, v)
+	case -v <= 511:
+		emitImm(tNlit, -v)
+	default:
+		emitImm(tLit, v)
+	}
+}
+
+func flushLit() {
+	if pending {
+		pending = false
+		emitLit(pendingV)
+	}
+}
+
+func compileLit(v uint32) {
+	flushLit()
+	pending = true
+	pendingV = v
+}
+
+// compileWord compiles a use of w.
+func compileWord(w int) {
+	switch words[w].kind {
+	case kPrim:
+		t := int(words[w].id)
+		if pending && tFold[t] >= 0 {
+			pending = false
+			v := pendingV
+			switch {
+			case t == tPlus && v > 511 && -v <= 511:
+				emitImm(tFoldMinus, -v)
+			case t == tMinus && v > 511 && -v <= 511:
+				emitImm(tFoldPlus, -v)
+			default:
+				emitImm(int(tFold[t]), v)
+			}
+			return
+		}
+		flushLit()
+		emitT(t)
+	case kColon:
+		flushLit()
+		emitAbs(tCall, words[w].xt)
+	case kOcto:
+		flushLit()
+		emitImm(tTrap, uint32(words[w].id))
+	case kConst:
+		compileLit(words[w].val)
+	}
+}
+
+// The control-flow stack, which IF, BEGIN and DO leave for THEN, UNTIL and
+// LOOP. A LEAVE's branch waits on a stack of its own for its LOOP.
+const (
+	csOrig = iota + 1 // a forward branch at at
+	csDest            // a backward branch's target at at
+	csDo              // a loop whose body starts at at, its LEAVEs from leave
+)
+
+type csEntry struct {
+	kind  int32
+	at    int32
+	leave int32
+}
+
+var (
+	cs      [32]csEntry
+	ncs     int
+	leaves  [64]int32
+	nleaves int
+)
+
+func csPush(kind, at, leave int) {
+	if ncs == len(cs) {
+		abort("control structures nested too deep")
+		return
+	}
+	cs[ncs].kind = int32(kind)
+	cs[ncs].at = int32(at)
+	cs[ncs].leave = int32(leave)
+	ncs++
+}
+
+// csPop answers the top entry, which must be of the kind given, or aborts.
+func csPop(kind int) csEntry {
+	if ncs == 0 || int(cs[ncs-1].kind) != kind {
+		abort("unbalanced control structure")
+		var e csEntry
+		return e
+	}
+	ncs--
+	return cs[ncs]
+}
+
+func addLeave(at int) {
+	if nleaves == len(leaves) {
+		abort("too many LEAVEs")
+		return
+	}
+	leaves[nleaves] = int32(at)
+	nleaves++
+}
+
+// beginColon starts a definition named s.
+func beginColon(s []byte) {
+	startCp = cp
+	startW = nwords
+	w := define(s, kColon, fHidden)
+	if w < 0 {
+		return
+	}
+	current = w
+	words[w].xt = codeAddr(cp)
+	ncs = 0
+	nleaves = 0
+	pending = false
+	emitT(tEnter)
+	setCompiling(true)
+}
+
+func endColon() {
+	flushLit()
+	if ncs != 0 {
+		abort("unbalanced control structure")
+		return
+	}
+	emitT(tExit)
+	words[current].flags &^= fHidden
+	setCompiling(false)
+}
+
+// discard takes back a definition an error left unfinished.
+func discard() {
+	if !compiling() {
+		return
+	}
+	for nwords > startW {
+		forget()
+	}
+	cp = startCp
+	setCompiling(false)
+	ncs = 0
+	nleaves = 0
+	pending = false
+}
+
+func compileIf() {
+	flushLit()
+	emitT(tIf)
+	csPush(csOrig, cp, 0)
+	emitAbs(tJz, 0)
+}
+
+func compileElse() {
+	flushLit()
+	at := cp
+	emitAbs(tJmp, 0)
+	e := csPop(csOrig)
+	resolve(int(e.at), codeAddr(cp))
+	csPush(csOrig, at, 0)
+}
+
+func compileThen() {
+	flushLit()
+	e := csPop(csOrig)
+	resolve(int(e.at), codeAddr(cp))
+}
+
+func compileBegin() {
+	flushLit()
+	csPush(csDest, cp, 0)
+}
+
+func compileUntil() {
+	flushLit()
+	emitT(tIf)
+	e := csPop(csDest)
+	emitAbs(tJz, codeAddr(int(e.at)))
+}
+
+func compileAgain() {
+	flushLit()
+	e := csPop(csDest)
+	emitAbs(tJmp, codeAddr(int(e.at)))
+}
+
+func compileWhile() {
+	flushLit()
+	emitT(tIf)
+	at := cp
+	emitAbs(tJz, 0)
+	d := csPop(csDest)
+	csPush(csOrig, at, 0)
+	csPush(csDest, int(d.at), 0)
+}
+
+func compileRepeat() {
+	flushLit()
+	d := csPop(csDest)
+	emitAbs(tJmp, codeAddr(int(d.at)))
+	o := csPop(csOrig)
+	resolve(int(o.at), codeAddr(cp))
+}
+
+func compileDo(q bool) {
+	flushLit()
+	emitT(tDo)
+	base := nleaves
+	if q {
+		emitT(tQdo)
+		addLeave(cp)
+		emitAbs(tJz, 0)
+	}
+	csPush(csDo, cp, base)
+}
+
+func compileLeave() {
+	flushLit()
+	found := false
+	for i := 0; i < ncs; i++ {
+		if cs[i].kind == csDo {
+			found = true
+		}
+	}
+	if !found {
+		abort("LEAVE outside a loop")
+		return
+	}
+	addLeave(cp)
+	emitAbs(tJmp, 0)
+}
+
+func compileLoop(plus bool) {
+	flushLit()
+	e := csPop(csDo)
+	if plus {
+		emitT(tPloop)
+		emitAbs(tJnc, codeAddr(int(e.at)))
+	} else {
+		emitT(tLoop)
+		emitAbs(tJnz, codeAddr(int(e.at)))
+	}
+	for i := int(e.leave); i < nleaves; i++ {
+		resolve(int(leaves[i]), codeAddr(cp))
+	}
+	nleaves = int(e.leave)
+	emitT(tUnloop)
+}
+
+// standalone gives a word that pushes v the code that executes it.
+func standaloneLit(w int, v uint32) {
+	words[w].xt = codeAddr(cp)
+	emitLit(v)
+	emitT(tRet)
+}
+
+func standaloneTrap(w int) {
+	words[w].xt = codeAddr(cp)
+	emitImm(tTrap, uint32(words[w].id))
+	emitT(tRet)
+}
