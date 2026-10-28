@@ -1,17 +1,12 @@
 \ P2XCForth's prelude to the third parties' benchmarks, for P2XCForthD of
-\ 2026-04-07. First, its author's own definitions, from the block 2 his
-\ start-up loads from the SD card, which the build for the shared board does
-\ not mount, and from his Blocks2-10.fth:
-: eval$ s" evaluate " evaluate ; immediate
-: i s" r@" eval$ ; immediate
-: 2drop s" drop drop " eval$ ; immediate
-: ?dup dup if dup then ;
-: <> = 0= ;
-: cells s" 2 << " eval$ ; immediate
-: spaces ffor 32 emit fnext ;
-\ his recurse, posted on 2026-04-08, with this version's words for <> and
-\ 8 cells:
-: recurse here@ begin dup @ context @ = 0= while 1- repeat 32 + $26 c, , ; immediate
+\ 2026-04-07. It follows build/p2xc/author.fth, which scripts/p2xc.sh takes
+\ from the archive: its author's words his start-up loads from the SD card,
+\ which the build for the shared board does not mount (i, <>, cells and
+\ the like). RECURSE by the method he posted on 2026-04-08: the newest
+\ header's link field is the cell below HERE that holds CONTEXT, its code
+\ field 32 bytes on, and a call the wcall byte $26 and that address.
+: newest ( -- lfa ) here@ begin dup @ context @ = 0= while 1- repeat ;
+: recurse newest 32 + $26 c, , ; immediate
 \ Then what the programs need that it does not have, written here. .( skips
 \ its text, as ( does; abort" reports and goes on, there being no ABORT to
 \ compile; LEAVE compiles nothing (bubble-sort.fs has it in a word main does
@@ -46,7 +41,7 @@
 : 3pick >r >r over r> swap r> swap ;
 : rdrop r> r> drop >r ;
 : undo r> r> drop r> drop >r ;
-: recursive here@ begin dup @ context @ = 0= while 1- repeat context ! ; immediate
+: recursive newest context ! ; immediate
 \ Only timetype, which is not run, uses these:
 variable base
 : <# ; : #s ; : #> ;

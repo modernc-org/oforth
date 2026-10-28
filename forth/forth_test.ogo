@@ -291,7 +291,7 @@ func TestSee(t *testing.T) {
 	checkHas(t, "SEE sq3", "  EXIT ")
 	checkHas(t, ": t19 5 + 100000 sq3 . ; SEE t19", "  5 + ")
 	checkHas(t, "SEE t19", "  100000 ")
-	checkHas(t, "SEE t19", "  sq3 ")
+	checkHas(t, "SEE t19", "  DUP ") // sq3, inlined
 	checkHas(t, "SEE t19", "  . ")
 	checkHas(t, ": t20 0 DO I LOOP ; SEE t20", "  LOOP ")
 	checkHas(t, "SEE seven", "seven pushes ")
@@ -351,4 +351,32 @@ func TestTabs(t *testing.T) {
 		t.Fail()
 	}
 	check(t, "tab1 .", "5 ")
+}
+
+// TestTailInline holds the two cheapest of M4's: a small word without calls
+// or branches is copied into its callers, and a definition that ends in a
+// call jumps to it, so that a tail recursion runs in a frame of its own.
+func TestTailInline(t *testing.T) {
+	check(t, ": ti1 DUP * ; : ti2 ti1 1+ ; 3 ti2 .", "10 ")
+	checkHas(t, "SEE ti2", "  * ")
+	check(t, ": ti3 2 ; : ti4 ti3 ti3 + ; ti4 .", "4 ")
+	check(t, ": tc RECURSIVE DUP 0= IF EXIT THEN 1- tc ; 100000 tc .", "0 ")
+	checkHas(t, "SEE tc", "TAIL tc")
+	check(t, ": tcb .\" x\" ; : tcc 1 DROP tcb ; tcc", "x")
+	checkHas(t, "SEE tcc", "TAIL tcb")
+	check(t, ": tcd IF 1 ELSE tcb THEN ; 0 tcd 1 tcd .", "x1 ")
+	check(t, ": tr1 >R R> ; : tr2 5 tr1 ; tr2 .", "5 ")
+	check(t, ": te ; : te2 te te 7 ; te2 .", "7 ")
+	checkHas(t, "SEE te2", "  7 ")
+	checkHas(t, "SEE tr2", "  TAIL tr1") // not inlined: it uses the return stack
+}
+
+// TestFill holds FILL, PASM since M4, at every alignment and length that
+// takes each of its three parts.
+func TestFill(t *testing.T) {
+	check(t, "CREATE fb 32 ALLOT fb 32 0 FILL fb 1+ 9 65 FILL fb 12 TYPE", "\x00AAAAAAAAA\x00\x00")
+	check(t, "fb 32 0 FILL fb 3 + 1 66 FILL fb 2 + C@ . fb 3 + C@ . fb 4 + C@ .", "0 66 0 ")
+	check(t, "fb 32 0 FILL fb 8 67 FILL fb 7 + C@ . fb 8 + C@ .", "67 0 ")
+	check(t, "fb 32 0 FILL fb 0 67 FILL fb C@ .", "0 ")
+	check(t, ": ff fb 2 + 13 68 FILL ; ff fb 1+ C@ . fb 2 + C@ . fb 14 + C@ . fb 15 + C@ .", "0 68 68 0 ")
 }

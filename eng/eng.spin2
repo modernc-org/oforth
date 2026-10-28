@@ -652,6 +652,33 @@ charp_e
               alignl
 chars_b
 chars_e
+              long    (@fill_e - @fill_b) >> 2
+              byte    "FILL", 0
+              alignl
+fill_b        rdlut   t2, --ptrb              ' the count
+              rdlut   t1, --ptrb              ' the address
+              movbyts tos, #0                 ' the byte, in all four
+.head         tjz     t2, #.done              ' bytes up to a long boundary
+              mov     t3, t1
+              and     t3, #3
+              tjz     t3, #.longs
+              wrbyte  tos, t1
+              add     t1, #1
+              sub     t2, #1
+              tjnz    t2, #.head
+.longs        mov     t3, t2                  ' then longs
+              shr     t3, #2
+              tjz     t3, #.tail
+.lloop        wrlong  tos, t1
+              add     t1, #4
+              djnz    t3, #.lloop
+.tail         and     t2, #3                  ' and the bytes left
+              tjz     t2, #.done
+.tloop        wrbyte  tos, t1
+              add     t1, #1
+              djnz    t2, #.tloop
+.done         rdlut   tos, --ptrb
+fill_e
               long    (@count_e - @count_b) >> 2
               byte    "COUNT", 0
               alignl
@@ -765,6 +792,12 @@ exit_b        rdlut   pb, rp
               add     rp, #1
               jmp     pb
 exit_e
+              long    (@unframe_e - @unframe_b) >> 2 | F_HIDDEN
+              byte    "~unframe", 0
+              alignl
+unframe_b     rdlut   pb, rp
+              add     rp, #1
+unframe_e
               long    (@ret_e - @ret_b) >> 2 | F_HIDDEN
               byte    "~ret", 0
               alignl

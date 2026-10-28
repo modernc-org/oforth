@@ -31,7 +31,7 @@ echo
 if [ -f build/p2xc/p2xc.binary ]; then
 	printf 'P2XCForth   '
 	flock -o -w 900 /tmp/p2-board.lock sh -c "$wait_port
-		(sleep 5; while IFS= read -r l; do printf '%s\r\n' \"\$l\"; sleep 1; done < bench/p2xc.fth; sleep 3; printf '\035') |
+		(sleep 5; cat build/p2xc/author.fth bench/p2xc.fth | while IFS= read -r l; do printf '%s\r\n' \"\$l\"; sleep 1; done; sleep 3; printf '\035') |
 			timeout 90 ogo loadp2 -b 230400 -t -NOEOF -p $port build/p2xc/p2xc.binary" |
 		tr -d '\r' | sed -n 's/^ [a-z]*  \.  \([0-9]*\)$/\1/p' | tr '\n' ' '
 	echo

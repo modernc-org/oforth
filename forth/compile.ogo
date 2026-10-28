@@ -30,7 +30,7 @@ var (
 	// The compiler's own templates, found by name.
 	tDup, tLit, tNlit, tAugs, tCall, tJmp, tJz, tJnz, tJnc, tIf   int
 	tEnter, tExit, tRet, tTrap, tDo, tQdo, tLoop, tPloop, tUnloop int
-	tFoldPlus, tFoldMinus, tPlus, tMinus, tOf                     int
+	tFoldPlus, tFoldMinus, tPlus, tMinus, tOf, tUnframe           int
 	ds0, dsMax, rp0                                               uint32
 )
 
@@ -92,6 +92,7 @@ func loadTemplates() {
 	tFoldPlus = hiddenTpl("~+")
 	tFoldMinus = hiddenTpl("~-")
 	tOf = hiddenTpl("~of")
+	tUnframe = hiddenTpl("~unframe")
 	for t := 0; t < ntpl; t++ {
 		if tFlags[t]&tfHidden != 0 {
 			continue
@@ -123,6 +124,11 @@ func loadTemplates() {
 	}
 	tDup = primTpl("DUP")
 	tUnloop = primTpl("UNLOOP")
+	// What a word may not contain to be inlined: the return stack's words,
+	// which in a caller would reach the caller's frame, and calls.
+	for _, s := range [...]string{">R", "R>", "R@", "2>R", "2R>", "2R@", "I", "J", "UNLOOP", "EXECUTE"} {
+		tNoInline[primTpl(s)] = true
+	}
 	tPlus = primTpl("+")
 	tMinus = primTpl("-")
 }
@@ -167,7 +173,20 @@ var (
 	current  int // the word being defined
 	startCp  int // where its code began, for an error to take it back
 	startW   int
+
+	// For the tail call and inlining: where the last call was compiled,
+	// where the last branch was resolved to, and whether the definition
+	// is still one that can be copied into its callers.
+	lastCall  int
+	landing   int
+	inlinable bool
+	bodyStart int
+
+	tNoInline [maxTemplates]bool
 )
+
+// maxInline is the longest body, in longs, a word may have to be inlined.
+const maxInline = 16
 
 func emitw(v uint32) {
 	if cp >= codeLongs {
@@ -206,6 +225,10 @@ func emitImm(t int, v uint32) {
 
 // emitAbs emits a call or a branch to the hub address a.
 func emitAbs(t int, a uint32) {
+	inlinable = false
+	if t == tCall {
+		lastCall = cp
+	}
 	emitw(tplLong(t, 0) | a&0xfffff)
 }
 
@@ -214,6 +237,9 @@ func emitAbs(t int, a uint32) {
 func resolve(at int, a uint32) {
 	if aborted {
 		return
+	}
+	if a == codeAddr(cp) {
+		landing = cp
 	}
 	code[at] = code[at]&^0xfffff | a&0xfffff
 }
@@ -262,12 +288,25 @@ func compileWord(w int) {
 			return
 		}
 		flushLit()
+		if tNoInline[t] {
+			inlinable = false
+		}
 		emitT(t)
 	case kColon:
 		flushLit()
+		if words[w].val > 0 {
+			// Inlined: its body, which has no call, branch or trap, and
+			// may be empty. val is the body's length plus one.
+			b := int(words[w].id)
+			for i := 0; i < int(words[w].val)-1; i++ {
+				emitw(code[b+i])
+			}
+			return
+		}
 		emitAbs(tCall, words[w].xt)
 	case kOcto:
 		flushLit()
+		inlinable = false
 		emitImm(tTrap, uint32(words[w].id))
 	case kConst:
 		compileLit(words[w].val)
@@ -362,6 +401,10 @@ func beginColon(s []byte, anon bool) {
 	nleaves = 0
 	pending = false
 	emitT(tEnter)
+	lastCall = -1
+	landing = -1
+	inlinable = true
+	bodyStart = cp
 	setCompiling(true)
 }
 
@@ -371,7 +414,22 @@ func endColon() {
 		abort("unbalanced control structure")
 		return
 	}
-	emitT(tExit)
+	n := cp - bodyStart
+	switch {
+	case lastCall >= 0 && lastCall == cp-1 && landing != cp:
+		// A tail call: the frame goes first, and the word jumps to the
+		// last word it calls, which returns to this one's caller.
+		to := code[cp-1] & 0xfffff
+		cp--
+		emitT(tUnframe)
+		emitAbs(tJmp, to)
+	default:
+		emitT(tExit)
+		if inlinable && n <= maxInline {
+			words[current].id = int32(bodyStart)
+			words[current].val = uint32(n + 1)
+		}
+	}
 	words[current].size = int32(cp) - int32((words[current].xt-codeAddr(0))/4)
 	setCompiling(false)
 	if noname {

@@ -204,7 +204,6 @@ func octoWords() {
 	octoWord("SM/REM", oSmRem, 0)
 	octoWord("DECIMAL", oDecimal, 0)
 	octoWord("HEX", oHex, 0)
-	octoWord("FILL", oFill, 0)
 	octoWord("MOVE", oMove, 0)
 	wAbort = octoWord("ABORT", oAbort, 0)
 	octoWord("DOES>", oDoes, ic)
@@ -570,6 +569,7 @@ func octo(id int) {
 		compileLeave()
 	case oExit:
 		flushLit()
+		inlinable = false
 		emitT(tExit)
 	case oLeftBracket:
 		flushLit()
@@ -733,6 +733,7 @@ func valueOf(k uint8) int {
 func octo2(id int) {
 	switch id {
 	case oDoes:
+		inlinable = false
 		// The defining word ends here, telling ~does where the code after
 		// DOES> begins, which is right after this; the literal is made of
 		// its full three longs so that its place is known before it is.

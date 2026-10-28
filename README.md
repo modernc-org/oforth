@@ -17,11 +17,12 @@ It is the third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
-**Status, 2026-10-28: milestone M2.** A REPL on the serial line compiles
-every colon definition to P2 machine code: 79 primitives copied in as P2
-instructions, literals folded into the instructions that use them, calls
+**Status, 2026-10-28: milestone M2 done, M4 begun.** A REPL on the serial
+line compiles every colon definition to P2 machine code: 80 primitives
+copied in as P2 instructions, literals folded into the instructions that
+use them, small words inlined, a call in tail position made a jump, calls
 with the return address in a register and the return stack in LUT RAM, and
-110 words written in OctoGo that compiled code calls back into. It passes
+109 words written in OctoGo that compiled code calls back into. It passes
 the CORE and CORE EXT tests of the Forth-2012 test suite on the board, with
 0 errors (`scripts/f2012.sh`), and `SEE` shows a word's machine code as the
 words it was compiled from. There is no file loading yet, no FLOATING, no
@@ -61,15 +62,17 @@ clock frequency. Fewer is faster.
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| an empty `DO LOOP`, 100,000 times | 2,400,020 | 7,200,137 | 3,200,288 |
-| an empty colon word called 100,000 times | 6,400,021 | 15,200,129 | 9,600,288 |
-| the Byte sieve, 8192 flags, one pass | 2,077,473 | 6,611,169 | 13,546,112 |
-| `25 fib`, recursive | 18,080,718 | 54,477,337 | 97,114,008 |
-| `10 fact` 10,000 times, recursive | 14,560,026 | 49,040,145 | 42,800,280 |
+| an empty `DO LOOP`, 100,000 times | 2,400,020 | 7,200,129 | 3,200,288 |
+| an empty colon word called 100,000 times | 2,400,020 | 13,600,129 | 9,600,288 |
+| the Byte sieve, 8192 flags, one pass | 1,771,993 | 6,390,449 | 13,546,112 |
+| `25 fib`, recursive | 18,080,718 | 53,969,641 | 97,114,008 |
+| `10 fact` 10,000 times, recursive | 15,360,026 | 48,960,129 | 42,800,280 |
 
 The sources are in [bench/](bench), the same algorithm in each system's
-dialect; the sieve is P2XCForth's own, from its archive, in the variant
-its author measured fastest. Taken as they are:
+dialect; the sieve is BYTE's of 1981 as P2XCForth's archive has it, with
+8192 flags, in the variant its author measured fastest, whose macros
+`scripts/p2xc.sh` takes from his archive with his other block words, none
+of them being in this repository. Taken as they are:
 
 - TAQOZ is TAQOZ Reloaded V2.14.0, its author's image of 2024-02-19, from
   the board's flash at 200 MHz. Its empty loop takes the 32 clocks an
@@ -81,11 +84,16 @@ its author measured fastest. Taken as they are:
   `scripts/p2xc.sh` with four changes, which the script prints: the EDGE's
   20 MHz crystal, no SD card mounted, so no block loaded from it at start,
   and its Spin2 object's `#define`s applied by hand. Its empty loop takes
-  the 72 clocks an iteration its documentation gives. Its `recurse` is the
-  one its author posted on 2026-04-08. Its archive of 2025-07-11 ran within
-  a few percent of these numbers.
-- OctoForth's `FILL` is written in OctoGo, a byte at a time: 378,290 of
-  its sieve's clocks.
+  the 72 clocks an iteration its documentation gives. Its `recurse` works
+  as the one its author posted on 2026-04-08. Its timings move by up to a
+  tenth with where its words land in memory (its calls took 15,200,129 in
+  one build), and its archive of 2025-07-11 ran within that.
+- OctoForth inlines the empty word since M4, so the second row is its loop
+  alone; `fib` and `fact`, recursive, measure its calls (34 clocks a call
+  and return, 8 more for the frame). Its timings, too, move by a few
+  percent with where code lands, a taken branch in hub RAM costing 13 to
+  20 clocks with its target's place: `fact` took 14,560,026 before M4
+  moved it.
 
 ## Third parties' benchmarks
 
@@ -101,18 +109,18 @@ around the work, in milliseconds; fewer is faster.
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| Ertl: sieve, 1000 times | 9,871 | does not run | 34,380 |
-| Ertl: bubble sort, 6000 | 12,558 | 83,678 | 78,262 |
-| Ertl: matrix multiply, 64 by 64 | 240 | 1,286 | 1,168 |
-| Ertl: `34 fib` | 7,743 | 23,382 | 42,075 |
-| Stanford Perm, 10 times | 896 | does not load | does not fit |
-| Stanford Towers | 1,904 | | |
-| Stanford Queens | 1,312 | | |
-| Stanford Intmm | 2,976 | | |
-| Stanford Puzzle | 6,671 | | |
-| Stanford Quick | 1,808 | | |
-| Stanford Bubble | 1,920 | | |
-| Stanford Trees | 3,167 | | |
+| Ertl: sieve, 1000 times | 8,335 | does not run | 34,380 |
+| Ertl: bubble sort, 6000 | 12,558 | 82,960 | 78,262 |
+| Ertl: matrix multiply, 64 by 64 | 240 | 1,288 | 1,168 |
+| Ertl: `34 fib` | 7,743 | 23,477 | 42,075 |
+| Stanford Perm, 10 times | 784 | does not load | does not fit |
+| Stanford Towers | 1,360 | | |
+| Stanford Queens | 688 | | |
+| Stanford Intmm | 1,680 | | |
+| Stanford Puzzle | 6,623 | | |
+| Stanford Quick | 880 | | |
+| Stanford Bubble | 1,200 | | |
+| Stanford Trees | 3,088 | | |
 
 The programs run as their authors wrote them but for what the script
 prints: the matrices are 64 by 64, not 200 by 200, which needs 480 KB;
@@ -123,8 +131,9 @@ for TAQOZ they are in upper case, TAQOZ finding a name in another case only
 when it was defined in upper case.
 Each system loads a prelude first, [bench/third/](bench/third), with the
 words the programs need and it lacks: for OctoForth seven words of
-Fraeman's SC32 kernel; for P2XCForth its author's own block definitions and
-plain colon definitions of the ANS words it lacks, `2@` and `2!` among
+Fraeman's SC32 kernel; for P2XCForth, after its author's own block words
+taken from his archive at run time, plain colon definitions of the ANS
+words it lacks, `2@` and `2!` among
 them, which costs it in bubble sort; for TAQOZ its ANS words under TAQOZ's
 names, and a CREATE whose data is TAQOZ's code space, its own CREATE giving
 none, with `2@` and `2!` again colon definitions. Ertl's sieve does not run

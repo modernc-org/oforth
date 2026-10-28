@@ -86,6 +86,8 @@ for name, path in progs.items():
     for system in ("oforth", "p2xc", "taqoz"):
         try:
             pre = open("bench/third/prelude-%s.fth" % system, encoding="latin-1").read()
+            if system == "p2xc":
+                pre = open("build/p2xc/author.fth", encoding="latin-1").read() + pre
         except FileNotFoundError:
             continue
         case = {"p2xc": str.lower, "taqoz": str.upper}.get(system, lambda x: x)

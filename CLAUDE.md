@@ -29,7 +29,7 @@ words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
 (`scripts/f2012.sh`); `ogo test ./forth` passes (fifteen tests); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
-"Three Forths on one board"): OctoForth 2.4 to 3.4 times the speed of
+"Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
 forum thread 176239; there is no repository), and 1.3 to 6.5 times TAQOZ
 Reloaded's. Third parties' benchmarks too (`scripts/third.sh`, README.md
@@ -40,7 +40,9 @@ resets (TAQOZ then stops at boot with "BAD CID"); a power cycle of the
 board, the user's to do, has always cured it so far, and other sessions
 must pause the board for it first. Next is M3 (the P2 words, RUN, the
 embedding API) or M4 (speed: inlining, tail calls, the LUT cache), the
-user's to choose. Not yet: file loading, a host twin. The repository is on
+user's to choose; the user chose M4, begun the same night: inlining, tail
+calls and FILL in PASM done; next the cache for hot loops. Not yet: file
+loading, a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -67,7 +69,10 @@ The files:
   below.
 - `bench/`: the five benchmarks in three dialects, `oforth.fth`,
   `taqoz.fth`, `p2xc.fth`, the same algorithms; `scripts/bench.sh` runs
-  them. `bench/third/prelude-SYSTEM.fth`: what each system needs for the
+  them. Nothing of P2XCForth's author is in the repository (the user's
+  wish, 2026-10-28): `scripts/p2xc.sh` writes his block words and sieve
+  macros from his archive into `build/p2xc/author.fth`, which the scripts
+  load first; this repository's own words for his system say so. `bench/third/prelude-SYSTEM.fth`: what each system needs for the
   third parties' programs, published to be judged; `scripts/third.sh`
   fetches the programs (pinned hashes, into `build/third`), applies and
   prints its few changes, and times every run through `scripts/session.py`,
@@ -267,6 +272,16 @@ All measured or read in this session and recorded with their sources in
   what DOES> turns into a jump to the DOES> code, making it kDoes), kValue,
   kDefer, kMarker. A kDoes is compiled as a call of its code, so a later
   DOES> reaches words already compiled.
+- **Inlining and tail calls** (`compile.ogo`, M4): while a definition
+  compiles, `inlinable` stays true until a call, branch or trap is emitted
+  (`emitAbs`, a trap), EXIT or DOES> is compiled, or a template marked in
+  `tNoInline` is (the return stack's words and EXECUTE); at `;` a body of
+  at most `maxInline` longs is kept for copying, `id` its start and `val`
+  its length plus one (an empty body inlines to nothing). A definition
+  whose last long is a call (`lastCall`) with no branch resolved to just
+  after it (`landing`) ends in `~unframe` and a jump instead: SEE shows
+  `TAIL name`. Code placement moves timings by a few percent, a taken hub
+  branch costing 13 to 20 clocks with its target's place.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and

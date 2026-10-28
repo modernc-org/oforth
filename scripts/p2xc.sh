@@ -14,7 +14,11 @@
 # of a block from it is left out too (D's); and the Spin2 object's #define
 # lines are applied by hand, which this flexcc's preprocessor does not do
 # for an object the C uses. It compiles with the flexcc OctoGo embeds, built
-# from ../ogo. The archive is not this repository's and is never committed.
+# from ../ogo. It also writes build/p2xc/author.fth: the definitions of its
+# author's that the benchmarks load before theirs, taken from the archive's
+# block files (the words his start-up loads from the SD card, and his sieve's
+# macros), so that nothing of his is in this repository. The archive is not
+# this repository's and is never committed.
 #
 # Usage: scripts/p2xc.sh P2XCForthD.zip
 
@@ -62,6 +66,38 @@ open(d + "/P2XF" + v + ".spin2", "w", encoding="latin-1").write(s)
 print("defines applied by hand:", defs)
 PY
 tr -d '\r' < $dir/orig.c | diff - $dir/P2XF$v.c || true
+python3 -I - "$zip" $dir/author.fth <<'PY'
+import re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+def block(name):
+    for n in z.namelist():
+        if n.endswith("/Blocks/" + name):
+            return z.read(n).decode("latin-1").replace("\r\n", "\n")
+    sys.exit("no Blocks/%s in %s" % (name, sys.argv[1]))
+def definition(text, word):
+    # a colon definition of word, to its ;, as the author wrote it
+    m = re.search(r"(?m)^: " + re.escape(word) + r"\s.*?;[^\n]*$", text, re.S)
+    if not m:
+        sys.exit("no definition of %s" % word)
+    return m.group(0)
+out = ["\\ The definitions of P2XCForth's author the benchmarks need, taken from",
+       "\\ " + sys.argv[1].split("/")[-1] + " by scripts/p2xc.sh; not this repository's."]
+b2 = block("block2.fth")
+for w in ("eval$", "i", "2drop", "?dup", "<>"):
+    out += ["\\ block2.fth:", definition(b2, w)]
+b210 = block("Blocks2-10.fth")
+for w in ("cells", "spaces"):
+    out += ["\\ Blocks2-10.fth:", definition(b210, w)]
+b10 = block("block10PrimeA.fth")
+out.append("\\ block10PrimeA.fth, its sieve's size and flags compiled as literals:")
+for pat in (r"(?m)^: size .*$", r"(?m)^variable flags1 .*$", r"(?m)^3 constant litcode.*$", r"(?m)^: flags .*$"):
+    m = re.search(pat, b10)
+    if not m:
+        sys.exit("no %s in block10PrimeA.fth" % pat)
+    out.append(m.group(0))
+open(sys.argv[2], "w", encoding="latin-1").write("\n".join(out) + "\n")
+print("wrote", sys.argv[2])
+PY
 [ -x build/flexcc ] || (cd ../ogo && go build -o "$OLDPWD/build/flexcc" ./scripts/flexcc)
 (cd $dir && ../flexcc -2 -O1 -o p2xc.binary P2XF$v.c 2>&1 | grep -v warning || true)
 ls -l $dir/p2xc.binary
