@@ -15,19 +15,33 @@ wordcodes, tokens, threads or XBYTE bytecodes. The user is the author of
 OctoGo (`../ogo`), p2-11 (`../p2-11`) and obeam (`../obeam`); the words were
 "Research first, discussion next, decision to go or not go the last."
 
-**Status, 2026-10-28: go, the user's decision, after the research and probe M0.**
+**Status, 2026-10-28: M2 done; go was the user's decision, after the research and probe M0.**
 `ASSESSMENT.md` is the research, written as obeam's was. Its verdict is
 "go"; the probe it asked for ran on the board the same day (`probe/m0`,
 ASSESSMENT.md section 4, "Probe M0"): code copied from PASM templates into
 a hub array at run time runs on the REPL's cog and on a cog of its own,
 traps back into OctoGo work, and the costs match the model but for `REP`
 in hub RAM. The user decided go the same evening and settled the open
-points (below, "Decisions taken"). M1, the kernel, runs the same night:
-the REPL on the serial line compiles colon definitions to native code, and
-`ogo test ./forth` passes on the board (seven tests, the encoder's against
-flexspin among them); the first numbers are in README.md. Not in M1: DOES>,
-POSTPONE, SEE, EVALUATE, inlining of colon words, the host twin. The
-repository is on GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
+points (below, "Decisions taken"). M1, the kernel, ran the same night (the
+REPL compiles colon definitions to native code; committed 426c8c3), and M2
+after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
+words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
+the Forth-2012 test suite passing on the board with 0 errors
+(`scripts/f2012.sh`); `ogo test ./forth` passes (fifteen tests); and the
+benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
+"Three Forths on one board"): OctoForth 2.4 to 3.4 times the speed of
+P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
+forum thread 176239; there is no repository), and 1.3 to 6.5 times TAQOZ
+Reloaded's. Third parties' benchmarks too (`scripts/third.sh`, README.md
+"Third parties' benchmarks"): Ertl's four and Fraeman's Stanford suite,
+all twelve passing on OctoForth, three of Ertl's on P2XCForth, all four of
+Ertl's on TAQOZ. The board's SD card sometimes stops answering after
+resets (TAQOZ then stops at boot with "BAD CID"); a power cycle of the
+board, the user's to do, has always cured it so far, and other sessions
+must pause the board for it first. Next is M3 (the P2 words, RUN, the
+embedding API) or M4 (speed: inlining, tail calls, the LUT cache), the
+user's to choose. Not yet: file loading, a host twin. The repository is on
+GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
 
@@ -51,6 +65,20 @@ The files:
   attribution line stays while the logo does.
 - `main.ogo`, `eng/`, `forth/`: the Forth; "The Forth's architecture"
   below.
+- `bench/`: the five benchmarks in three dialects, `oforth.fth`,
+  `taqoz.fth`, `p2xc.fth`, the same algorithms; `scripts/bench.sh` runs
+  them. `bench/third/prelude-SYSTEM.fth`: what each system needs for the
+  third parties' programs, published to be judged; `scripts/third.sh`
+  fetches the programs (pinned hashes, into `build/third`), applies and
+  prints its few changes, and times every run through `scripts/session.py`,
+  which marks the work with { and } and times it by the host's clock, the
+  programs outlasting a 32-bit clock counter. A `\ @TIME name` line before
+  a command marks it timed. Never edit `scripts/third.sh` while it runs:
+  sh reads it as it goes. `scripts/p2xc.sh P2XCForthC.zip` builds P2XCForth for the EDGE into
+  `build/p2xc` with its three printed changes; `scripts/f2012.sh` fetches
+  the Forth-2012 suite at a pinned commit into `build/f2012`, checks its
+  hashes, and runs it. `build/` is ignored: the suite and P2XCForth are
+  third parties' and never committed.
 - `probe/m0`: the probe, a program of its own (`main.ogo` and the Spin2
   object `eng`), research and not the Forth: it prints clocks, and its
   numbers are ASSESSMENT.md's. Re-run it after any change of `ogo`: the
@@ -136,9 +164,18 @@ version` and the clock they were taken at, never from the estimates.
 - An OctoGo gap is a result, not an obstacle: a minimal reproducer and
   numbers to the user, the idiomatic workaround meanwhile. A request to
   OctoGo from here is small and late while ogo is in its rc window.
-- **One P2-EDGE board** (512 KB hub RAM, PropPlug on `/dev/ttyUSB0`, flash
-  holding TAQOZ Reloaded, which is the competitor at the same clock) is
-  shared with the ogo, p2-11 and obeam sessions. Every use of the port
+- **One P2-EDGE board** (512 KB hub RAM, PropPlug on `/dev/ttyUSB0`) is
+  shared with the ogo, p2-11 and obeam sessions. Its flash holds TAQOZ
+  Reloaded V2.14.0 (the image of 2024-02-19 from SourceForge's
+  TAQOZ/binaries), written there on 2026-10-28 at the user's word by
+  loading `_BOOT_P2.BIX` and typing `BACKUP FLASH`; it had held obeam's
+  hello since 2026-10-17. After a reset with no loader the board boots it,
+  at 921600 baud, and `scripts/taqoz.py` talks to it. Its data space has no
+  room for 8 KB and it has a word FLAGS of its own, which a `:=` of the same
+  name breaks (bench/taqoz.fth). The ROM's TAQOZ, V1.1, is `ogo loadp2
+  -xTAQOZ -b 115200 -t`. P2XCForth's console is at 230400 and its input
+  ends lines at LF; it knows lower case only, takes no TAB for a space,
+  keeps names to 19 characters, and its `+LOOP` ends only at equality. Every use of the port
   (`ogo run`, `ogo test`, `ogo loadp2`) runs under `flock -w 900
   /tmp/p2-board.lock` (`flock -o` when the command starts children). A port
   busy under the lock is another session's loader: say so and wait, never
@@ -217,16 +254,31 @@ All measured or read in this session and recorded with their sources in
   the control-flow stack; `interp.ogo` input, numbers, `exec` (run, serve
   traps, resume), errors and the REPL; `words.ogo` the words OctoGo
   executes, a `switch` in `octo`, with `needs` giving how many cells each
-  takes, checked before it runs.
+  takes, checked before it runs (`octo` has M1's words, `octo2` M2's);
+  `see.ogo` SEE, which reads code back by matching the templates, longest
+  first, with immediates, AUGS and branch targets decoded.
+- **The input source** is `src`, a slice over `tib` or over what EVALUATE
+  was given, `srcAddr` where it is, and `>IN` a data-space cell
+  (`cellToIn`); `parse`, `parseName` and `skip` read it. EVALUATE saves and
+  restores it, and `exec` keeps a trapped word's continuation and PB across
+  a nested run, so compiled code can EVALUATE.
+- **The kinds of word** (`dict.ogo`): kPrim, kColon, kOcto, kConst
+  (CONSTANT, VARIABLE, CREATE: its standalone code's last long, `ret`, is
+  what DOES> turns into a jump to the DOES> code, making it kDoes), kValue,
+  kDefer, kMarker. A kDoes is compiled as a call of its code, so a later
+  DOES> reaches words already compiled.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
   `jmp pb`; compiled, a primitive is copied, a colon word called, an OctoGo
   word a trap, a constant a pending literal.
-- **An error** is `abort`: the line stops, a trapped word is abandoned (its
+- **An error** is `abort` (or `abortQuiet`, ABORT's and QUIT's): the line stops, a trapped word is abandoned (its
   state being registers only, nothing unwinds), the stacks are emptied and
   a definition in progress is taken back. The REPL checks the stacks'
-  bounds after every line.
+  bounds after every line. After an error nothing may patch code:
+  `resolve` refuses, and every `csPop` caller stops, since a failed pop
+  answers an entry at code[0] (a THEN with no IF once patched DUP's first
+  long, which `TestRecovery` holds).
 - A new primitive is a template entry; a new OctoGo word is an `o...`
   constant, a line in `octoWords`, a `case` in `octo` and its count in
   `needs`; a new test is a `check` in `forth/forth_test.ogo`.
@@ -247,6 +299,9 @@ flock -w 900 /tmp/p2-board.lock ogo test ./forth # the tests, on the board, seco
 flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
+scripts/f2012.sh                # the Forth-2012 CORE and CORE EXT tests on the board, a minute; errors: 0
+scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
+scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes
 ```
 
 To capture a board run without a terminal, as the siblings do:

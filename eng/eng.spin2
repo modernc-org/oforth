@@ -378,6 +378,12 @@ ummod_b       rdlut   t2, --ptrb
               wrlut   t2, ptrb++
               mov     tos, t1
 ummod_e
+              long    (@stod_e - @stod_b) >> 2
+              byte    "S>D", 0
+              alignl
+stod_b        wrlut   tos, ptrb++
+              sar     tos, #31
+stod_e
               long    (@negate_e - @negate_b) >> 2
               byte    "NEGATE", 0
               alignl
@@ -802,6 +808,14 @@ ploop_b       mov     t1, lix
               add     lix, tos
               rdlut   tos, --ptrb
 ploop_e
+              long    (@of_e - @of_b) >> 2 | F_HIDDEN
+              byte    "~of", 0
+              alignl
+of_b          rdlut   t1, --ptrb
+              cmp     t1, tos wz
+        if_z  rdlut   tos, --ptrb
+        if_nz mov     tos, t1
+of_e
               long    (@fplus_e - @fplus_b) >> 2 | F_HIDDEN | F_IMM
               byte    "~+", 0
               alignl

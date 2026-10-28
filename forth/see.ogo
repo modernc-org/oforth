@@ -1,0 +1,268 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// SEE shows what a word is and, for one made of code, the code, long by
+// long, read back as the templates it was copied from: the compiler writes
+// nothing else, so every run of longs is a primitive, a literal, a call, a
+// trap, a branch or a frame. The longs are shown beside what they are read
+// as. A run of two primitives that is also one, NIP DROP being 2DROP, reads
+// as the longer.
+
+var (
+	seeOrder [maxTemplates]int32 // the templates, longest first
+	nseen    int
+)
+
+func seeInit() {
+	if nseen != 0 {
+		return
+	}
+	for t := 0; t < ntpl; t++ {
+		i := nseen
+		for i > 0 && tLen[seeOrder[i-1]] < tLen[t] {
+			seeOrder[i] = seeOrder[i-1]
+			i--
+		}
+		seeOrder[i] = int32(t)
+		nseen++
+	}
+}
+
+func hex(v uint32, width int) {
+	var b [8]byte
+	for i := 7; i >= 0; i-- {
+		d := v & 15
+		v >>= 4
+		if d < 10 {
+			b[i] = byte('0' + d)
+		} else {
+			b[i] = byte('A' + d - 10)
+		}
+	}
+	typeBytes(b[8-width:])
+}
+
+// match answers how many longs from code[at] template t is, and the
+// immediate or the address in it, AUGS included.
+func match(t, at, end int) (int, uint32, bool) {
+	n := int(tLen[t])
+	if n == 0 {
+		return 0, 0, false
+	}
+	slot := -1
+	if tFlags[t]&tfImm != 0 {
+		slot = 0
+		if tFlags[t]&tfSlot1 != 0 {
+			slot = 1
+		}
+	}
+	abs := t == tCall || t == tJmp || t == tJz || t == tJnz || t == tJnc
+	i := at
+	v := uint32(0)
+	aug := uint32(0)
+	for k := 0; k < n; k++ {
+		if i >= end {
+			return 0, 0, false
+		}
+		w := code[i]
+		tw := tplLong(t, k)
+		switch {
+		case abs:
+			if w&^0xfffff != tw {
+				return 0, 0, false
+			}
+			v = w & 0xfffff
+		case k == slot:
+			if w&^0x7fffff == tplLong(tAugs, 0) && i+1 < end {
+				aug = w & 0x7fffff
+				i++
+				w = code[i]
+			}
+			if w&^511 != tw {
+				return 0, 0, false
+			}
+			v = aug<<9 | w&511
+		default:
+			if w != tw {
+				return 0, 0, false
+			}
+		}
+		i++
+	}
+	return i - at, v, true
+}
+
+// tplName answers a template's name, the compiler's own ones without the
+// "~" and in upper case, as the words they are part of.
+var tplBuf [32]byte
+
+func tplName(t int) []byte {
+	n := int(tName[t])
+	s := tNames[n : n+int(tNlen[t])]
+	if len(s) < 2 || s[0] != '~' {
+		return s
+	}
+	k := 0
+	for _, c := range s[1:] {
+		if k < len(tplBuf) {
+			tplBuf[k] = upper(c)
+			k++
+		}
+	}
+	return tplBuf[:k]
+}
+
+// seeTarget names where a call or a branch goes.
+func seeTarget(a uint32) {
+	w := wordOfXt(a)
+	if w >= 0 {
+		typeBytes(wordName(w))
+		return
+	}
+	for w := nwords - 1; w >= 0; w-- {
+		if words[w].kind == kDoes && words[w].does == a {
+			typeBytes(wordName(w))
+			typeStr("'s DOES>")
+			return
+		}
+	}
+	hex(a, 5)
+}
+
+// seeOne writes what the longs from code[at] are and answers how many.
+func seeOne(at, end int) int {
+	// A literal: DUP, then a MOV or NEG of TOS, AUGS perhaps between.
+	if code[at] == tplLong(tDup, 0) && at+1 < end {
+		if n, v, ok := match(tLit, at+1, end); ok {
+			typeBytes(digits(v, true))
+			return n + 1
+		}
+		if n, v, ok := match(tNlit, at+1, end); ok {
+			typeBytes(digits(-v, true))
+			return n + 1
+		}
+	}
+	// What ends in a branch: the branch's target is the next long's.
+	pairs := [...]int{tIf, tJz, tQdo, tJz, tLoop, tJnz, tPloop, tJnc, tOf, tJnz}
+	label := [...]string{"0BRANCH ", "?DO ", "LOOP ", "+LOOP ", "OF "}
+	for i := 0; i < len(pairs); i += 2 {
+		if n, _, ok := match(pairs[i], at, end); ok {
+			if m, a, ok := match(pairs[i+1], at+n, end); ok {
+				typeStr(label[i/2])
+				hex(a, 5)
+				return n + m
+			}
+		}
+	}
+	if n, v, ok := match(tCall, at, end); ok {
+		seeTarget(v)
+		return n
+	}
+	if n, v, ok := match(tTrap, at, end); ok {
+		for w := nwords - 1; w >= 0; w-- {
+			if words[w].kind == kOcto && words[w].id == int32(v) {
+				typeBytes(wordName(w))
+				return n
+			}
+		}
+		typeStr("trap ")
+		typeBytes(digits(v, false))
+		return n
+	}
+	branches := [...]int{tJmp, tJz, tJnz, tJnc}
+	blabel := [...]string{"BRANCH ", "BRANCH IF ZERO ", "BRANCH IF NOT ZERO ", "BRANCH IF NO CARRY "}
+	for i, t := range branches {
+		if n, a, ok := match(t, at, end); ok {
+			typeStr(blabel[i])
+			hex(a, 5)
+			return n
+		}
+	}
+	for i := 0; i < nseen; i++ {
+		t := int(seeOrder[i])
+		if t == tLit || t == tNlit || t == tAugs || t == tTrap || t == tDup {
+			continue
+		}
+		if n, v, ok := match(t, at, end); ok {
+			if tFlags[t]&tfImm != 0 {
+				typeBytes(digits(v, true))
+				emit(' ')
+			}
+			typeBytes(tplName(t))
+			return n
+		}
+	}
+	if code[at] == tplLong(tDup, 0) {
+		typeStr("DUP")
+		return 1
+	}
+	typeStr("?")
+	return 1
+}
+
+// seeCode lists n longs of code from at: the address, what the longs are
+// read as, and the longs. The text is made in out first, the console's
+// output being held back for it, so that it can be padded.
+func seeCode(at, n int) {
+	seeInit()
+	end := at + n
+	for i := at; i < end; {
+		hex(codeAddr(i), 5)
+		typeStr("  ")
+		var text [64]byte
+		saved := nout
+		con := Console
+		Console = false
+		k := seeOne(i, end)
+		nt := copy(text[:], out[saved:nout])
+		nout = saved
+		Console = con
+		typeBytes(text[:nt])
+		spaces(int32(24 - nt))
+		for j := i; j < i+k; j++ {
+			emit(' ')
+			hex(code[j], 8)
+		}
+		emit('\n')
+		i += k
+	}
+}
+
+func see(w int) {
+	typeBytes(wordName(w))
+	switch words[w].kind {
+	case kPrim:
+		typeStr(" is a primitive\n")
+	case kColon:
+		typeStr(" is a colon definition\n")
+	case kOcto:
+		typeStr(" is OctoGo's, trap ")
+		typeBytes(digits(uint32(words[w].id), false))
+		emit('\n')
+	case kConst:
+		typeStr(" pushes ")
+		typeBytes(digits(words[w].val, true))
+		emit('\n')
+	case kDoes:
+		typeStr(" pushes ")
+		typeBytes(digits(words[w].val, true))
+		typeStr(" and runs its DOES> code at ")
+		hex(words[w].does, 5)
+		emit('\n')
+	case kValue:
+		typeStr(" is a VALUE, now ")
+		typeBytes(digits(peek(words[w].val), true))
+		emit('\n')
+	case kDefer:
+		typeStr(" is a DEFER of ")
+		seeTarget(peek(words[w].val))
+		emit('\n')
+	}
+	if words[w].flags&fImmediate != 0 {
+		typeStr("IMMEDIATE\n")
+	}
+	if words[w].size > 0 {
+		seeCode(int((words[w].xt-codeAddr(0))/4), int(words[w].size))
+	}
+}

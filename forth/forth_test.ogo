@@ -4,6 +4,7 @@
 
 import (
 	"testing"
+	"unsafe"
 
 	"modernc.org/oforth/eng"
 )
@@ -204,4 +205,150 @@ func TestEncoder(t *testing.T) {
 		t.Fail()
 	}
 	cp = at
+}
+
+func contains(got []byte, want string) bool {
+	for i := 0; i+len(want) <= len(got); i++ {
+		if same(got[i:i+len(want)], want) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkHas is check for output only part of which is fixed.
+func checkHas(t *testing.T, src, want string) {
+	ResetOutput()
+	Evaluate(src)
+	got := Output()
+	if !contains(got, want) {
+		printf("%s\n   got: \"", src)
+		show(got)
+		printf("\"\n  want it to contain: \"%s\"\n", want)
+		t.Fail()
+	}
+	if d := depth(); d != 0 {
+		printf("%s\n  left %d on the stack\n", src, d)
+		t.Fail()
+		reset()
+	}
+}
+
+func TestDefining(t *testing.T) {
+	check(t, ": CONST CREATE , DOES> @ ; 7 CONST seven seven . : u1 seven 1+ ; u1 .", "7 8 ")
+	check(t, ": ARRAY CREATE CELLS ALLOT DOES> SWAP CELLS + ; 5 ARRAY ar 42 3 ar ! 3 ar @ .", "42 ")
+	check(t, "' seven EXECUTE .", "7 ")
+	check(t, "CREATE cr1 99 , ' cr1 >BODY @ .", "99 ")
+	check(t, "5 VALUE vv vv . 7 TO vv vv . : t14 9 TO vv ; t14 vv . : t15 vv 1+ ; t15 .", "5 7 9 10 ")
+	check(t, "' vv EXECUTE .", "9 ")
+	check(t, "DEFER df ' DUP IS df 3 df . . : t16 ['] 1+ IS df ; t16 3 df . ACTION-OF df ' 1+ = .", "3 3 4 -1 ")
+	check(t, ": t18 df ; 5 t18 .", "6 ")
+	check(t, ":NONAME 2 * ; 21 SWAP EXECUTE .", "42 ")
+	check(t, "16 BUFFER: bf bf 16 65 FILL bf 15 + C@ .", "65 ")
+	check(t, ": my-if POSTPONE IF ; IMMEDIATE : t8 my-if 1 ELSE 2 THEN ; TRUE t8 . FALSE t8 .", "1 2 ")
+	check(t, ": cdup POSTPONE DUP ; IMMEDIATE : t9 cdup * ; 6 t9 .", "36 ")
+	check(t, ": c2 ['] DUP COMPILE, ; IMMEDIATE : t10 c2 + ; 4 t10 .", "8 ")
+	check(t, ": cs CASE 1 OF 10 ENDOF 2 OF 20 ENDOF 99 SWAP ENDCASE ; 1 cs . 2 cs . 3 cs .", "10 20 99 ")
+	check(t, ": d1 DOES> @ 1+ ; : d2 DOES> @ 2 + ; CREATE c3 1 , d1 c3 . d2 c3 .", "2 3 ")
+	check(t, ": WEIRD: CREATE DOES> 1+ DOES> 2 + ; WEIRD: w2 ' w2 >BODY w2 SWAP - . ' w2 >BODY w2 SWAP - .", "1 2 ")
+}
+
+func TestPictured(t *testing.T) {
+	check(t, "<# 123 0 #S #> TYPE", "123")
+	check(t, ": .d DUP ABS 0 <# #S ROT SIGN #> TYPE ; -45 .d 0 .d", "-450")
+	check(t, "HEX <# $FF 0 # # #> TYPE DECIMAL", "FF")
+	check(t, "<# 5 0 # 36 HOLD #> TYPE", "$5")
+	check(t, "<# 0 0 #S S\" ab\" HOLDS #> TYPE", "ab0")
+	check(t, "-5 S>D . .", "-1 -5 ")
+}
+
+func TestInput(t *testing.T) {
+	check(t, "S\" 2 3 +\" EVALUATE .", "5 ")
+	check(t, ": ev S\" 10 20 *\" EVALUATE ; ev .", "200 ")
+	check(t, "S\" : evd 77 ;\" EVALUATE evd .", "77 ")
+	check(t, "SOURCE NIP .", "12 ")
+	check(t, "SOURCE-ID . S\" SOURCE-ID .\" EVALUATE", "0 -1 ")
+	check(t, ": t11 BL WORD COUNT TYPE ; t11 hello", "hello")
+	check(t, "BL WORD DUP FIND . DROP", "-1 ")
+	check(t, "BL WORD IF FIND . DROP", "1 ")
+	check(t, "0 0 S\" 123x\" >NUMBER . DROP . .", "1 0 123 ")
+	check(t, ": t12 [CHAR] ) PARSE TYPE ; t12 abc)", "abc")
+	check(t, "PARSE-NAME foo TYPE", "foo")
+	check(t, ": t13 ABORT\" boom\" 1 ; 0 t13 . 1 t13", "1 boom\n")
+	check(t, "S\" X\" ENVIRONMENT? .", "0 ")
+	check(t, "1 2 QUIT 3", "")
+	check(t, "REFILL .", "0 ")
+	check(t, "1 2 3 4 3 ROLL . . . .", "1 4 3 2 ")
+	check(t, "CREATE eb 4 ALLOT eb 4 255 FILL eb 2 ERASE eb C@ . eb 3 + C@ .", "0 255 ")
+	check(t, ": t17 C\" abc\" COUNT TYPE ; t17", "abc")
+	check(t, "UNUSED 0> . PAD 0= .", "-1 0 ")
+}
+
+func TestSee(t *testing.T) {
+	checkHas(t, ": sq3 DUP * ; SEE sq3", "sq3 is a colon definition\n")
+	checkHas(t, "SEE sq3", "  DUP ")
+	checkHas(t, "SEE sq3", "  * ")
+	checkHas(t, "SEE sq3", "  EXIT ")
+	checkHas(t, ": t19 5 + 100000 sq3 . ; SEE t19", "  5 + ")
+	checkHas(t, "SEE t19", "  100000 ")
+	checkHas(t, "SEE t19", "  sq3 ")
+	checkHas(t, "SEE t19", "  . ")
+	checkHas(t, ": t20 0 DO I LOOP ; SEE t20", "  LOOP ")
+	checkHas(t, "SEE seven", "seven pushes ")
+	checkHas(t, "SEE DUP", "DUP is a primitive\n")
+}
+
+// TestRecovery holds an error's recovery to leaving the system as it was:
+// a THEN with no IF once patched the first long of DUP.
+func TestRecovery(t *testing.T) {
+	check(t, ": t21 THEN ; : t22 1 LOOP ; : t23 UNTIL ; : t24 ENDOF ;", "error: unbalanced control structure\n")
+	check(t, ": t22 REPEAT ;", "error: unbalanced control structure\n")
+	check(t, ": t23 1 LOOP ;", "error: unbalanced control structure\n")
+	check(t, ": t24 ENDCASE ;", "error: unbalanced control structure\n")
+	check(t, "3 DUP . . 1 2 SWAP . .", "3 3 1 2 ")
+}
+
+func TestCoreExt(t *testing.T) {
+	check(t, "MARKER mk : gone 1 ; gone . mk gone", "1 gone ?\n")
+	check(t, "HERE MARKER mk2 5 ALLOT mk2 HERE = .", "-1 ")
+	check(t, "DEFER dd ' DUP ' dd DEFER! 2 dd . . ' dd DEFER@ ' DUP = .", "2 2 -1 ")
+	check(t, "S\\\" a\\tb\\x41\\q\" TYPE", "a\tbA\"")
+	check(t, ": t25 S\\\" x\\ny\" TYPE ; t25", "x\ny")
+	check(t, "VARIABLE si 0 si ! : si1 si @ >IN +! 15 si ! ; S\" SAVE-INPUT si1 RESTORE-INPUT 12345\" EVALUATE si @ . . .", "15 2345 0 ")
+}
+
+func TestRecursiveDP(t *testing.T) {
+	check(t, ": cd RECURSIVE DUP IF 1- cd THEN ; 5 cd .", "0 ")
+	check(t, "HERE 100 ALLOT DP @ SWAP - .", "100 ")
+	check(t, "HERE DUP 8 ALLOT DP ! HERE = .", "-1 ")
+}
+
+// keys is what testKey answers, as a console would, a CR when it is spent.
+var (
+	keys  string
+	nkeys int
+)
+
+func testKey() int {
+	if nkeys >= len(keys) {
+		return '\r'
+	}
+	c := keys[nkeys]
+	nkeys++
+	return int(c)
+}
+
+// TestTabs holds the REPL's line reader to taking a TAB for a space, as
+// pasted source has them: it once dropped them, gluing words together.
+func TestTabs(t *testing.T) {
+	keys = ":\ttab1\t2\t3 + ;\t\\ a comment\r"
+	nkeys = 0
+	Key = testKey
+	ntib = accept(uint32(uintptr(unsafe.Pointer(&tib[0]))), len(tib))
+	Key = nil
+	if !line() {
+		printf("the line with TABs failed\n")
+		t.Fail()
+	}
+	check(t, "tab1 .", "5 ")
 }

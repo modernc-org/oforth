@@ -13,10 +13,14 @@ const (
 
 // What a word is.
 const (
-	kPrim  = iota // a template, copied into the words that use it
-	kColon        // code with a frame, called
-	kOcto         // OctoGo's: a trap where it is compiled
-	kConst        // pushes val: a CONSTANT, VARIABLE or CREATE
+	kPrim   = iota // a template, copied into the words that use it
+	kColon         // code with a frame, called
+	kOcto          // OctoGo's: a trap where it is compiled
+	kConst         // pushes val: a CONSTANT, VARIABLE or CREATE
+	kDoes          // a CREATE that DOES> gave code: pushes val, calls does
+	kValue         // a VALUE: fetches the cell at val
+	kDefer         // a DEFER: executes the xt in the cell at val
+	kMarker        // a MARKER: takes everything back to marks[val]
 )
 
 const (
@@ -33,7 +37,10 @@ type word struct {
 	next  int32  // the next word of the bucket, -1 at the end
 	xt    uint32 // the code that executes the word, which every word has
 	id    int32  // the template of a kPrim, the number of a kOcto
-	val   uint32 // what a kConst pushes
+	val   uint32 // what a kConst pushes, the cell of a kValue or kDefer
+	does  uint32 // a kDoes's code after DOES>
+	ret   int32  // a kConst's last long, the return DOES> replaces
+	size  int32  // the longs of the code at xt, for SEE
 }
 
 var (
@@ -105,6 +112,9 @@ func define(s []byte, kind, flags uint8) int {
 	words[w].xt = 0
 	words[w].id = 0
 	words[w].val = 0
+	words[w].does = 0
+	words[w].ret = -1
+	words[w].size = 0
 	h := hash(s)
 	words[w].next = bucket[h]
 	bucket[h] = int32(w)
@@ -135,6 +145,16 @@ func forget() {
 	bucket[h] = words[w].next
 	nnames = n
 	nwords = w
+}
+
+// wordOfXt answers the word whose code is at xt, or -1.
+func wordOfXt(xt uint32) int {
+	for w := nwords - 1; w >= 0; w-- {
+		if words[w].xt == xt {
+			return w
+		}
+	}
+	return -1
 }
 
 func wordName(w int) []byte {

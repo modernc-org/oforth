@@ -4,16 +4,41 @@
 
 import (
 	"p2"
+	"unsafe"
 
 	"modernc.org/oforth/eng"
 )
 
-// The input: one line at a time, in tib, parsed from toIn on.
+// The input source: a line read into tib, or what EVALUATE was given. src
+// is it, srcAddr where it is, and >IN, a cell of the data space as ANS has
+// it, how far it has been parsed.
 var (
-	tib  [256]byte
-	ntib int
-	toIn int
+	tib      [256]byte
+	ntib     int
+	src      []byte
+	srcAddr  uint32
+	sourceID uint32 // 0 for a line, -1 for EVALUATE
 )
+
+func toIn() int { return int(data[cellToIn]) }
+
+func setToIn(i int) { data[cellToIn] = uint32(i) }
+
+// fromTib makes the line in tib the input source.
+func fromTib() {
+	src = tib[:ntib]
+	srcAddr = uint32(uintptr(unsafe.Pointer(&tib[0])))
+	sourceID = 0
+	setToIn(0)
+}
+
+// fromMemory makes n bytes at a the input source.
+func fromMemory(a, n uint32) {
+	src = unsafe.Slice((*byte)(unsafe.Pointer(uintptr(a))), int(n))
+	srcAddr = a
+	sourceID = 0xffffffff
+	setToIn(0)
+}
 
 // The output goes to the serial line when Console is set, a newline as CR
 // LF, and otherwise into out, where a test reads it.
@@ -59,9 +84,10 @@ func Output() []byte { return out[:nout] }
 func ResetOutput() { nout = 0 }
 
 // An error abandons the line, and what was being compiled, and empties the
-// stacks.
+// stacks. A quiet one, ABORT's or QUIT's, says nothing.
 var (
 	aborted bool
+	quiet   bool
 	abortS  string
 )
 
@@ -69,6 +95,13 @@ func abort(s string) {
 	if !aborted {
 		aborted = true
 		abortS = s
+	}
+}
+
+func abortQuiet() {
+	if !aborted {
+		aborted = true
+		quiet = true
 	}
 }
 
@@ -139,6 +172,8 @@ func execute(w int) {
 		octo(int(words[w].id))
 	case kConst:
 		push(words[w].val)
+	case kMarker:
+		backTo(int(words[w].val))
 	default:
 		exec(words[w].xt)
 	}
@@ -146,33 +181,60 @@ func execute(w int) {
 
 func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\r' || c == '\n' }
 
-// parseName answers the next name of the input, empty at the end.
+// parseName answers the next name of the input, empty at the end, and
+// leaves where it began in parsed.
+var parsed int
+
 func parseName() []byte {
-	for toIn < ntib && isSpace(tib[toIn]) {
-		toIn++
+	i := toIn()
+	n := len(src)
+	if i > n {
+		i = n
 	}
-	s := toIn
-	for toIn < ntib && !isSpace(tib[toIn]) {
-		toIn++
+	for i < n && isSpace(src[i]) {
+		i++
 	}
-	e := toIn
-	if toIn < ntib {
-		toIn++
+	s := i
+	for i < n && !isSpace(src[i]) {
+		i++
 	}
-	return tib[s:e]
+	e := i
+	if i < n {
+		i++
+	}
+	setToIn(i)
+	parsed = s
+	return src[s:e]
 }
 
-// parse answers the input up to the delimiter c, which it skips.
+// parse answers the input up to the delimiter c, which it skips. A space
+// delimits at any white space.
 func parse(c byte) []byte {
-	s := toIn
-	for toIn < ntib && tib[toIn] != c {
-		toIn++
+	i := toIn()
+	n := len(src)
+	if i > n {
+		i = n
 	}
-	e := toIn
-	if toIn < ntib {
-		toIn++
+	s := i
+	for i < n && !(src[i] == c || c == ' ' && isSpace(src[i])) {
+		i++
 	}
-	return tib[s:e]
+	e := i
+	if i < n {
+		i++
+	}
+	setToIn(i)
+	parsed = s
+	return src[s:e]
+}
+
+// skip passes the delimiters c at the input's position.
+func skip(c byte) {
+	i := toIn()
+	for i < len(src) && (src[i] == c || c == ' ' && isSpace(src[i])) {
+		i++
+	}
+	setToIn(i)
 }
 
 // number converts s in BASE, or in the base a prefix gives: $ for 16, # for
@@ -225,9 +287,8 @@ func number(s []byte) (uint32, bool) {
 	return v, true
 }
 
-// interpret runs what is in tib.
+// interpret runs the input source from >IN on.
 func interpret() {
-	toIn = 0
 	for !aborted {
 		s := parseName()
 		if len(s) == 0 {
@@ -293,25 +354,38 @@ func checkStacks() {
 	}
 }
 
-// line interprets one line and answers whether it went well, the error
-// having been written and the system reset if not.
+// line interprets the line in tib and answers whether it went well, the
+// error having been written and the system reset if not.
 func line() bool {
 	aborted = false
+	quiet = false
 	nerr = 0
+	fromTib()
 	interpret()
 	checkStacks()
 	if !aborted {
 		return true
 	}
-	if nerr > 0 {
-		typeBytes(errName[:nerr])
-	} else {
-		typeStr("error: ")
+	if !quiet {
+		if nerr > 0 {
+			typeBytes(errName[:nerr])
+		} else {
+			typeStr("error: ")
+		}
+		typeStr(abortS)
+		emit('\n')
 	}
-	typeStr(abortS)
-	emit('\n')
 	reset()
 	return false
+}
+
+// evaluate interprets n bytes at a, the input source being restored after.
+func evaluate(a, n uint32) {
+	s, sa, id, in := src, srcAddr, sourceID, toIn()
+	fromMemory(a, n)
+	interpret()
+	src, srcAddr, sourceID = s, sa, id
+	setToIn(in)
 }
 
 // Evaluate interprets s, line by line, and answers whether every line went
@@ -335,12 +409,16 @@ func Evaluate(s string) bool {
 	return true
 }
 
-// accept reads a line from Key into tib, echoing it, and handles backspace.
-// A CR or LF ends it; an LF right after a CR is the same line's end.
+// accept reads a line of at most max bytes from Key to a, echoing it, and
+// answers its length; it handles backspace, and takes a TAB for a space. A CR or LF ends it; an LF right
+// after a CR is the same line's end.
 var lastCR bool
 
-func accept() {
-	ntib = 0
+func accept(a uint32, max int) int {
+	n := 0
+	if Key == nil {
+		return 0
+	}
 	for {
 		c := byte(Key())
 		if c == '\n' && lastCR {
@@ -348,22 +426,25 @@ func accept() {
 			continue
 		}
 		lastCR = c == '\r'
+		if c == '\t' {
+			c = ' '
+		}
 		switch {
 		case c == '\r' || c == '\n':
 			emit(' ')
-			return
+			return n
 		case c == 8 || c == 127:
-			if ntib > 0 {
-				ntib--
+			if n > 0 {
+				n--
 				emit(8)
 				emit(' ')
 				emit(8)
 			}
 		case c < ' ':
 		default:
-			if ntib < len(tib) {
-				tib[ntib] = c
-				ntib++
+			if n < max {
+				pokeb(a+uint32(n), c)
+				n++
 				emit(c)
 			}
 		}
@@ -373,13 +454,15 @@ func accept() {
 // Quit is the REPL: it reads a line, interprets it and says ok, for ever.
 func Quit() {
 	for {
-		accept()
+		ntib = accept(uint32(uintptr(unsafe.Pointer(&tib[0]))), len(tib))
 		if line() {
 			if compiling() {
 				typeStr(" compiled")
 			} else {
 				typeStr(" ok")
 			}
+			emit('\n')
+		} else if quiet {
 			emit('\n')
 		}
 	}

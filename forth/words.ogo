@@ -2,7 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-import "unsafe"
+import (
+	"p2"
+	"unsafe"
+
+	"modernc.org/oforth/eng"
+)
 
 // The words OctoGo executes. Compiled, each is a trap with its number; the
 // numbers start at 1, a request of 0 being a word's return.
@@ -67,9 +72,60 @@ const (
 	oFill
 	oMove
 	oAbort
+	oDoes
+	oDoesRT
+	oToBody
+	oPostpone
+	oCompileComma
+	oLessHash
+	oHash
+	oHashS
+	oHashGreater
+	oHold
+	oHolds
+	oSign
+	oEvaluate
+	oSource
+	oSourceID
+	oWord
+	oFind
+	oToNumber
+	oParse
+	oParseName
+	oAccept
+	oQuit
+	oAbortQuote
+	oAbortQRT
+	oEnvironment
+	oCase
+	oOf
+	oEndof
+	oEndcase
+	oValue
+	oTo
+	oDefer
+	oIs
+	oActionOf
+	oNoname
+	oErase
+	oRoll
+	oUnused
+	oBuffer
+	oCQuote
+	oRefill
+	oSee
+	oMarker
+	oMarkerRT
+	oSaveInput
+	oRestoreInput
+	oDeferFetch
+	oDeferStore
+	oSQuoteEsc
+	oRecursive
 )
 
-var wType int // TYPE, which ." compiles
+// Words the compiler compiles where it makes something of its own.
+var wType, wFetch, wStore, wExecute, wDrop, wAbort int
 
 func octoWord(s string, id int, flags uint8) int {
 	w := defineStr(s, kOcto, flags)
@@ -86,6 +142,11 @@ func constWord(s string, v uint32) {
 
 func octoWords() {
 	const ic = fImmediate | fCompile
+	// The words whose compile semantics use others look them up first.
+	wFetch = findStr("@")
+	wStore = findStr("!")
+	wExecute = findStr("EXECUTE")
+	wDrop = findStr("DROP")
 	octoWord(".", oDot, 0)
 	octoWord("U.", oUDot, 0)
 	octoWord(".R", oDotR, 0)
@@ -145,9 +206,74 @@ func octoWords() {
 	octoWord("HEX", oHex, 0)
 	octoWord("FILL", oFill, 0)
 	octoWord("MOVE", oMove, 0)
-	octoWord("ABORT", oAbort, 0)
+	wAbort = octoWord("ABORT", oAbort, 0)
+	octoWord("DOES>", oDoes, ic)
+	octoWord("~does", oDoesRT, fHidden)
+	octoWord(">BODY", oToBody, 0)
+	octoWord("POSTPONE", oPostpone, ic)
+	octoWord("COMPILE,", oCompileComma, 0)
+	octoWord("<#", oLessHash, 0)
+	octoWord("#", oHash, 0)
+	octoWord("#S", oHashS, 0)
+	octoWord("#>", oHashGreater, 0)
+	octoWord("HOLD", oHold, 0)
+	octoWord("HOLDS", oHolds, 0)
+	octoWord("SIGN", oSign, 0)
+	octoWord("EVALUATE", oEvaluate, 0)
+	octoWord("SOURCE", oSource, 0)
+	octoWord("SOURCE-ID", oSourceID, 0)
+	octoWord("WORD", oWord, 0)
+	octoWord("FIND", oFind, 0)
+	octoWord(">NUMBER", oToNumber, 0)
+	octoWord("PARSE", oParse, 0)
+	octoWord("PARSE-NAME", oParseName, 0)
+	octoWord("ACCEPT", oAccept, 0)
+	octoWord("QUIT", oQuit, 0)
+	octoWord("ABORT\"", oAbortQuote, ic)
+	octoWord("~abort\"", oAbortQRT, fHidden)
+	octoWord("ENVIRONMENT?", oEnvironment, 0)
+	octoWord("CASE", oCase, ic)
+	octoWord("OF", oOf, ic)
+	octoWord("ENDOF", oEndof, ic)
+	octoWord("ENDCASE", oEndcase, ic)
+	octoWord("VALUE", oValue, 0)
+	octoWord("TO", oTo, fImmediate)
+	octoWord("DEFER", oDefer, 0)
+	octoWord("IS", oIs, fImmediate)
+	octoWord("ACTION-OF", oActionOf, fImmediate)
+	octoWord(":NONAME", oNoname, 0)
+	octoWord("ERASE", oErase, 0)
+	octoWord("ROLL", oRoll, 0)
+	octoWord("UNUSED", oUnused, 0)
+	octoWord("BUFFER:", oBuffer, 0)
+	octoWord("C\"", oCQuote, ic)
+	octoWord("REFILL", oRefill, 0)
+	octoWord("SEE", oSee, 0)
+	octoWord("MARKER", oMarker, 0)
+	octoWord("~marker", oMarkerRT, fHidden)
+	octoWord("SAVE-INPUT", oSaveInput, 0)
+	octoWord("RESTORE-INPUT", oRestoreInput, 0)
+	octoWord("DEFER@", oDeferFetch, 0)
+	octoWord("DEFER!", oDeferStore, 0)
+	octoWord("S\\\"", oSQuoteEsc, fImmediate)
+	octoWord("RECURSIVE", oRecursive, ic)
 	constWord("BASE", dataBase()+cellBase*4)
 	constWord("STATE", dataBase()+cellState*4)
+	constWord(">IN", dataBase()+cellToIn*4)
+	constWord("DP", dataBase()+cellDP*4)
+	constWord("PAD", uint32(uintptr(unsafe.Pointer(&pad[0]))))
+}
+
+func findStr(s string) int {
+	var b [32]byte
+	for i := 0; i < len(s); i++ {
+		b[i] = s[i]
+	}
+	w := find(b[:len(s)])
+	if w < 0 {
+		panic("a word is missing")
+	}
+	return w
 }
 
 // Init makes the system: the templates' words, OctoGo's, and the empty
@@ -156,7 +282,7 @@ func Init() {
 	for i := range bucket {
 		bucket[i] = -1
 	}
-	dp = dataFirst
+	setDpOff(dataFirst)
 	data[cellBase] = 10
 	setCompiling(false)
 	loadTemplates()
@@ -282,8 +408,25 @@ func needs(id int) int {
 		return 1
 	case oDotR, oUDotR, oType:
 		return 2
-	case oStarSlash, oStarSlashMod, oFmMod, oSmRem, oFill, oMove:
+	case oStarSlash, oStarSlashMod, oFmMod, oSmRem, oFill, oMove, oAbortQRT:
 		return 3
+	case oDoesRT, oToBody, oCompileComma, oHold, oSign, oWord, oFind,
+		oParse, oValue, oRoll, oBuffer, oQuit:
+		if id == oQuit {
+			return 0
+		}
+		return 1
+	case oHash, oHashS, oHashGreater, oHolds, oEvaluate, oAccept,
+		oEnvironment, oErase:
+		return 2
+	case oToNumber:
+		return 4
+	case oMarkerRT, oDeferFetch:
+		return 1
+	case oDeferStore:
+		return 2
+	case oRestoreInput:
+		return 5
 	}
 	return 0
 }
@@ -334,7 +477,7 @@ func octo(id int) {
 	case oColon:
 		s := nameOrAbort()
 		if !aborted {
-			beginColon(s)
+			beginColon(s, false)
 		}
 	case oSemicolon:
 		endColon()
@@ -345,7 +488,7 @@ func octo(id int) {
 	case oParen:
 		parse(')')
 	case oBackslash:
-		toIn = ntib
+		setToIn(len(src))
 	case oDotParen:
 		typeBytes(parse(')'))
 	case oHere:
@@ -517,8 +660,558 @@ func octo(id int) {
 			}
 		}
 	case oAbort:
-		abort("aborted")
+		abortQuiet()
+	default:
+		octo2(id)
+	}
+}
+
+var (
+	pad     [128]byte
+	hold    [128]byte // the pictured number, built from its end
+	hld     int
+	wordBuf [258]byte // WORD's counted string
+	endofs  [64]int32
+	nendofs int
+	anon    = [...]byte{'~', 'n', 'o', 'n', 'a', 'm', 'e'}
+)
+
+func holdc(c byte) {
+	if hld == 0 {
+		abort("pictured number too long")
+		return
+	}
+	hld--
+	hold[hld] = c
+}
+
+func popd() uint64 {
+	hi := pop()
+	lo := pop()
+	return uint64(hi)<<32 | uint64(lo)
+}
+
+func pushd(d uint64) {
+	push(uint32(d))
+	push(uint32(d >> 32))
+}
+
+// digit answers the value of c as a digit, 99 if it is none.
+func digit(c byte) uint32 {
+	c = upper(c)
+	switch {
+	case c >= '0' && c <= '9':
+		return uint32(c - '0')
+	case c >= 'A' && c <= 'Z':
+		return uint32(c-'A') + 10
+	}
+	return 99
+}
+
+func setNth(n int, v uint32) {
+	if n == 0 {
+		eng.SetTos(v)
+		return
+	}
+	p2.WriteLUT(eng.GetDsp()-uint32(n), v)
+}
+
+// valueOf parses a name for TO, IS and ACTION-OF, which must be of kind k.
+func valueOf(k uint8) int {
+	w := findOrAbort()
+	if w < 0 {
+		return -1
+	}
+	if words[w].kind != k {
+		abortName(wordName(w), " is of another kind")
+		return -1
+	}
+	return w
+}
+
+// octo2 executes the OctoGo words of M2.
+func octo2(id int) {
+	switch id {
+	case oDoes:
+		// The defining word ends here, telling ~does where the code after
+		// DOES> begins, which is right after this; the literal is made of
+		// its full three longs so that its place is known before it is.
+		flushLit()
+		at := cp
+		emitT(tDup)
+		emitw(tplLong(tAugs, 0))
+		emitw(tplLong(tLit, 0))
+		emitImm(tTrap, oDoesRT)
+		emitT(tExit)
+		a := codeAddr(cp)
+		code[at+1] |= a >> 9
+		code[at+2] |= a & 511
+		emitT(tEnter)
+	case oDoesRT:
+		d := pop()
+		w := nwords - 1
+		// The word may have DOES> code already: a second DOES> replaces
+		// it, as when a DOES> part runs another.
+		if w < 0 || words[w].kind != kConst && words[w].kind != kDoes || words[w].ret < 0 {
+			abort("DOES> without CREATE")
+			return
+		}
+		words[w].kind = kDoes
+		words[w].does = d
+		code[words[w].ret] = tplLong(tJmp, 0) | d&0xfffff
+	case oToBody:
+		w := wordOfXt(pop())
+		if w < 0 || words[w].kind != kConst && words[w].kind != kDoes {
+			abort(">BODY of no CREATE")
+			return
+		}
+		push(words[w].val)
+	case oPostpone:
+		w := findOrAbort()
+		if w < 0 {
+			return
+		}
+		if words[w].flags&fImmediate != 0 {
+			compileWord(w)
+			return
+		}
+		compileLit(words[w].xt)
+		compileWord(findStr("COMPILE,"))
+	case oCompileComma:
+		xt := pop()
+		w := wordOfXt(xt)
+		if w >= 0 {
+			compileWord(w)
+			return
+		}
+		flushLit()
+		emitAbs(tCall, xt)
+	case oLessHash:
+		hld = len(hold)
+	case oHash, oHashS:
+		d := popd()
+		b := uint64(base())
+		for {
+			r := d % b
+			d /= b
+			if r < 10 {
+				holdc(byte('0' + r))
+			} else {
+				holdc(byte('A' + r - 10))
+			}
+			if id == oHash || d == 0 {
+				break
+			}
+		}
+		pushd(d)
+	case oHashGreater:
+		pop()
+		pop()
+		push(uint32(uintptr(unsafe.Pointer(&hold[0]))) + uint32(hld))
+		push(uint32(len(hold) - hld))
+	case oHold:
+		holdc(byte(pop()))
+	case oHolds:
+		n := pop()
+		a := pop()
+		for i := n; i > 0; i-- {
+			holdc(peekb(a + i - 1))
+		}
+	case oSign:
+		if int32(pop()) < 0 {
+			holdc('-')
+		}
+	case oEvaluate:
+		n := pop()
+		a := pop()
+		evaluate(a, n)
+	case oSource:
+		push(srcAddr)
+		push(uint32(len(src)))
+	case oSourceID:
+		push(sourceID)
+	case oWord:
+		c := byte(pop())
+		skip(c)
+		s := parse(c)
+		n := len(s)
+		if n > 255 {
+			n = 255
+		}
+		wordBuf[0] = byte(n)
+		copy(wordBuf[1:], s[:n])
+		push(uint32(uintptr(unsafe.Pointer(&wordBuf[0]))))
+	case oFind:
+		a := pop()
+		n := int(peekb(a))
+		w := find(unsafe.Slice((*byte)(unsafe.Pointer(uintptr(a+1))), n))
+		if w < 0 {
+			push(a)
+			push(0)
+			return
+		}
+		push(words[w].xt)
+		if words[w].flags&fImmediate != 0 {
+			push(1)
+		} else {
+			push(0xffffffff)
+		}
+	case oToNumber:
+		n := pop()
+		a := pop()
+		d := popd()
+		b := base()
+		for n > 0 {
+			v := digit(peekb(a))
+			if v >= b {
+				break
+			}
+			d = d*uint64(b) + uint64(v)
+			a++
+			n--
+		}
+		pushd(d)
+		push(a)
+		push(n)
+	case oParse:
+		s := parse(byte(pop()))
+		push(srcAddr + uint32(parsed))
+		push(uint32(len(s)))
+	case oParseName:
+		s := parseName()
+		push(srcAddr + uint32(parsed))
+		push(uint32(len(s)))
+	case oAccept:
+		n := int(pop())
+		a := pop()
+		push(uint32(accept(a, n)))
+	case oQuit:
+		abortQuiet()
+	case oAbortQuote:
+		s := parse('"')
+		a := stringHere(s)
+		compileLit(a)
+		compileLit(uint32(len(s)))
+		flushLit()
+		emitImm(tTrap, oAbortQRT)
+	case oAbortQRT:
+		n := pop()
+		a := pop()
+		if pop() != 0 {
+			for i := uint32(0); i < n; i++ {
+				emit(peekb(a + i))
+			}
+			emit('\n')
+			abortQuiet()
+		}
+	case oEnvironment:
+		pop()
+		pop()
+		push(0)
+	case oCase:
+		flushLit()
+		csPush(csCase, 0, nendofs)
+	case oOf:
+		flushLit()
+		emitT(tOf)
+		at := cp
+		emitAbs(tJnz, 0)
+		csPush(csOf, at, 0)
+	case oEndof:
+		flushLit()
+		e := csPop(csOf)
+		if aborted {
+			return
+		}
+		if nendofs == len(endofs) {
+			abort("too many ENDOFs")
+			return
+		}
+		endofs[nendofs] = int32(cp)
+		nendofs++
+		emitAbs(tJmp, 0)
+		resolve(int(e.at), codeAddr(cp))
+	case oEndcase:
+		flushLit()
+		e := csPop(csCase)
+		if aborted {
+			return
+		}
+		emitT(int(words[wDrop].id))
+		for i := int(e.leave); i < nendofs; i++ {
+			resolve(int(endofs[i]), codeAddr(cp))
+		}
+		nendofs = int(e.leave)
+	case oValue:
+		v := pop()
+		s := nameOrAbort()
+		if aborted {
+			return
+		}
+		align()
+		cell := here()
+		comma(v)
+		w := define(s, kValue, 0)
+		if w >= 0 {
+			words[w].val = cell
+			standaloneValue(w, cell)
+		}
+	case oDefer:
+		s := nameOrAbort()
+		if aborted {
+			return
+		}
+		align()
+		cell := here()
+		comma(words[wAbort].xt)
+		w := define(s, kDefer, 0)
+		if w >= 0 {
+			words[w].val = cell
+			standaloneDefer(w, cell)
+		}
+	case oTo, oIs:
+		k := uint8(kValue)
+		if id == oIs {
+			k = kDefer
+		}
+		w := valueOf(k)
+		if w < 0 {
+			return
+		}
+		if compiling() {
+			compileLit(words[w].val)
+			compileWord(wStore)
+			return
+		}
+		if depth() < 1 {
+			abort("stack underflow")
+			return
+		}
+		poke(words[w].val, pop())
+	case oActionOf:
+		w := valueOf(kDefer)
+		if w < 0 {
+			return
+		}
+		if compiling() {
+			compileLit(words[w].val)
+			compileWord(wFetch)
+			return
+		}
+		push(peek(words[w].val))
+	case oNoname:
+		beginColon(anon[:], true)
+	case oErase:
+		n := pop()
+		a := pop()
+		for i := uint32(0); i < n; i++ {
+			pokeb(a+i, 0)
+		}
+	case oRoll:
+		u := int(pop())
+		if u < 0 || u >= depth() {
+			abort("stack underflow")
+			return
+		}
+		x := nth(u)
+		for i := u; i > 0; i-- {
+			setNth(i, nth(i-1))
+		}
+		setNth(0, x)
+	case oUnused:
+		push(dataLongs*4 - dpOff())
+	case oBuffer:
+		n := pop()
+		s := nameOrAbort()
+		if aborted {
+			return
+		}
+		align()
+		a := here()
+		if !allot(int32(n)) {
+			return
+		}
+		w := define(s, kConst, 0)
+		if w >= 0 {
+			words[w].val = a
+			standaloneLit(w, a)
+		}
+	case oCQuote:
+		s := parse('"')
+		a := here()
+		ccomma(byte(len(s)))
+		stringHere(s)
+		compileLit(a)
+	case oRefill:
+		push(0)
+	case oSee:
+		w := findOrAbort()
+		if w >= 0 {
+			see(w)
+		}
+	case oMarker:
+		s := nameOrAbort()
+		if aborted {
+			return
+		}
+		if nmarks == len(marks) {
+			abort("too many MARKERs")
+			return
+		}
+		m := nmarks
+		marks[m].nwords = int32(nwords)
+		marks[m].cp = int32(cp)
+		marks[m].dp = dpOff()
+		nmarks++
+		w := define(s, kMarker, 0)
+		if w < 0 {
+			return
+		}
+		words[w].val = uint32(m)
+		at := cp
+		words[w].xt = codeAddr(cp)
+		emitLit(uint32(m))
+		emitImm(tTrap, oMarkerRT)
+		emitT(tRet)
+		words[w].size = int32(cp - at)
+	case oMarkerRT:
+		backTo(int(pop()))
+	case oSaveInput:
+		push(srcAddr)
+		push(uint32(len(src)))
+		push(uint32(toIn()))
+		push(sourceID)
+		push(4)
+	case oRestoreInput:
+		if pop() != 4 {
+			abort("RESTORE-INPUT of no SAVE-INPUT")
+			return
+		}
+		id := pop()
+		in := pop()
+		n := pop()
+		a := pop()
+		if a != srcAddr || n != uint32(len(src)) || id != sourceID {
+			push(0xffffffff)
+			return
+		}
+		setToIn(int(in))
+		push(0)
+	case oDeferFetch, oDeferStore:
+		w := wordOfXt(pop())
+		if w < 0 || words[w].kind != kDefer {
+			abort("not a DEFER")
+			return
+		}
+		if id == oDeferFetch {
+			push(peek(words[w].val))
+			return
+		}
+		poke(words[w].val, pop())
+	case oRecursive:
+		// The definition being compiled can be found from here on, so
+		// that it calls itself by name, as gforth's RECURSIVE has it.
+		words[current].flags &^= fHidden
+	case oSQuoteEsc:
+		n := parseEscaped()
+		if compiling() {
+			a := stringHere(escBuf[:n])
+			compileLit(a)
+			compileLit(uint32(n))
+			return
+		}
+		copy(sbuf[:], escBuf[:n])
+		push(uint32(uintptr(unsafe.Pointer(&sbuf[0]))))
+		push(uint32(n))
 	default:
 		abort("no such OctoGo word")
 	}
+}
+
+// The marks MARKER takes things back to.
+type mark struct {
+	nwords int32
+	cp     int32
+	dp     uint32
+}
+
+var (
+	marks  [32]mark
+	nmarks int
+)
+
+// backTo takes the dictionary and both spaces back to mark m, the MARKER
+// that made it gone with what came after it.
+func backTo(m int) {
+	if m < 0 || m >= nmarks {
+		abort("no such MARKER")
+		return
+	}
+	for nwords > int(marks[m].nwords) {
+		forget()
+	}
+	cp = int(marks[m].cp)
+	setDpOff(marks[m].dp)
+	nmarks = m
+}
+
+var escBuf [256]byte
+
+// parseEscaped parses S\"'s string up to an unescaped quote into escBuf,
+// with the escapes of Forth 2012, and answers its length.
+func parseEscaped() int {
+	n := 0
+	i := toIn()
+	for i < len(src) && src[i] != '"' {
+		c := src[i]
+		i++
+		if c == '\\' && i < len(src) {
+			e := src[i]
+			i++
+			switch e {
+			case 'a':
+				c = 7
+			case 'b':
+				c = 8
+			case 'e':
+				c = 27
+			case 'f':
+				c = 12
+			case 'l', 'n':
+				c = 10
+			case 'm':
+				if n < len(escBuf) {
+					escBuf[n] = 13
+					n++
+				}
+				c = 10
+			case 'q', '"':
+				c = '"'
+			case 'r':
+				c = 13
+			case 't':
+				c = 9
+			case 'v':
+				c = 11
+			case 'z':
+				c = 0
+			case 'x':
+				if i+1 < len(src) && digit(src[i]) < 16 && digit(src[i+1]) < 16 {
+					c = byte(digit(src[i])<<4 | digit(src[i+1]))
+					i += 2
+				}
+			default:
+				c = e
+			}
+		}
+		if n < len(escBuf) {
+			escBuf[n] = c
+			n++
+		}
+	}
+	if i < len(src) {
+		i++
+	}
+	setToIn(i)
+	return n
 }

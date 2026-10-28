@@ -770,12 +770,17 @@ What it showed:
   17 to 24, and `REP` in hub RAM the one estimate that was wrong.
 
 **The board and the room.** The P2-EDGE on /dev/ttyUSB0 is shared with the
-ogo, p2-11 and obeam sessions under `flock -w 900 /tmp/p2-board.lock`; its
-flash holds TAQOZ Reloaded, so the competitor runs on the same silicon at the
-same clock. P2XCForth's `_BOOT_P2.BIX` is built for a 25 MHz Kiss board and
-will not run as it is; its C and Spin2 sources would compile for the EDGE
-with the flexspin that `ogo` embeds (`scripts/flexcc`), which would put all
-three Forths on one board for M2's benchmarks. The machine is shared with
+ogo, p2-11 and obeam sessions under `flock -w 900 /tmp/p2-board.lock`. Its
+flash held TAQOZ Reloaded until obeam wrote its hello program there on
+2026-10-17; at the user's word it holds TAQOZ Reloaded V2.14.0 again since
+2026-10-28 (the image of 2024-02-19, written by its own `BACKUP FLASH`),
+which the board boots after a reset with no loader, and which M2's
+comparison measures. The ROM's TAQOZ, V1.1 of 2019-02-19, which the loader
+enters with `-xTAQOZ`, was measured first, when the flash held obeam's.
+P2XCForth's `_BOOT_P2.BIX` is built for a 25 MHz Kiss board and does not
+run as it is; its C and Spin2 sources compile for the EDGE with the flexspin
+`ogo` embeds, which M2 did (`scripts/p2xc.sh`), so all three Forths ran on
+one board. The machine is shared with
 the builder VMs: one heavy run at a time, after `uptime` and `free -g`. The
 ogo session is in rc.2's two-week public window; a request to OctoGo from
 here should be small and late.
@@ -896,7 +901,7 @@ the comparison the forum post rests on.
 | --- | --- | --- |
 | M0 | **Done 2026-10-28** (section 4, "Probe M0"; `probe/m0`). The probe: a Spin2 object with the hub-resident `run(xt)`, a word hand-assembled into a hub array by OctoGo, run on the main cog and back; the trap to OctoGo and back; `calld`+LUT against `calla`/`reta` for a call; `+`, `@`, a literal, a loop iteration, measured against section 3.6; the same word on an engine cog. Decides A or B and the return stack. | board, one or two sessions |
 | M1 | **Done 2026-10-28**, with two changes: the encoder's test runs on the board, against what flexspin assembled of the same instructions into the engine's DAT, not on the host; and the inlining of small colon words, which section 5 had in from the start, moved to M4 with the rest of the speed work. The kernel: about sixty primitives as PASM templates, the encoder with its host test against flexspin's assembler, `: ;`, literals with folding, IF ELSE THEN, BEGIN UNTIL WHILE REPEAT, DO LOOP +LOOP, the dictionary, the REPL on the serial line, `.` and `.S` | OctoGo, PASM |
-| M2 | CREATE DOES>, VARIABLE CONSTANT, IMMEDIATE POSTPONE `'` `[']` EXECUTE, `."` `S"`, the pictured numbers, comments, `SEE` (a disassembler of the generated code, which debugging needs anyway); the sieve, the empty loop and `fBench` (the recursive factorial, section 3.2) against TAQOZ and P2XCForth on the same board | breadth, the numbers |
+| M2 | **Done 2026-10-28**, and more: the CORE and CORE EXT tests of the Forth-2012 test suite pass on the board with 0 errors; SEE reads a word's code back as the templates it was made of rather than disassembling instructions. CREATE DOES>, VARIABLE CONSTANT, IMMEDIATE POSTPONE `'` `[']` EXECUTE, `."` `S"`, the pictured numbers, comments, `SEE` (a disassembler of the generated code, which debugging needs anyway); the sieve, the empty loop and `fBench` (the recursive factorial, section 3.2) against TAQOZ and P2XCForth on the same board | breadth, the numbers |
 | M3 | The P2 words; `RUN` on a cog with the engine image; the embedding API, `import "oforth"`, with a table of OctoGo functions a program exports as words; a Forth monitor in one of the sibling programs as the demo | multi-cog, interop |
 | M4 | Inlining of small words measured; the cog cache for hot loops and `REP`; `INCLUDE` from the SD card through p2-11's `fat`; the forum post | speed, the showcase |
 
@@ -908,6 +913,50 @@ frame included (P2XCForth 70); P2XCForth's own sieve source, one pass,
 6,654,800 for P2XCForth's best (33,274 us at 200 MHz, its author's figure);
 `25 fib` 18,118,669. The comparison on one board, with both systems'
 loops shown, stays M2's.
+
+M2's comparison, on one P2-EDGE, each system timed by its own counter, in
+clocks, the sources in `bench/` and the run `scripts/bench.sh`:
+
+| | OctoForth | P2XCForth D | P2XCForth C | TAQOZ Reloaded V2.14.0 | TAQOZ ROM V1.1 |
+| --- | --- | --- | --- | --- | --- |
+| an empty `DO LOOP`, 100,000 times | 2,400,020 | 7,200,137 | 7,200,129 | 3,200,288 | 3,200,360 |
+| an empty colon word called 100,000 times | 6,400,021 | 15,200,129 | 13,600,129 | 9,600,288 | 9,600,360 |
+| the Byte sieve, P2XCForth's source, one pass | 2,077,473 | 6,611,169 | 6,525,649 | 13,546,112 | 15,903,624 |
+| `25 fib` | 18,080,718 | 54,477,337 | 54,572,929 | 97,114,008 | 113,623,952 |
+| `10 fact` 10,000 times | 14,560,026 | 49,040,145 | 48,320,129 | 42,800,280 | 44,240,360 |
+
+OctoForth is 2.4 to 3.4 times P2XCForthD's speed and 1.3 to 6.5 times
+TAQOZ Reloaded's, the least on the empty loop and on calls, where a hub branch of 14
+to 20 clocks is most of the cost, and the most where primitives dominate.
+P2XCForth beats TAQOZ where bytecodes do the work (the sieve, fib), and
+TAQOZ beats it on the empty loop, the calls and the factorial: TAQOZ's loop
+and call machinery runs in cog RAM, and P2XCForth's `*` is a trap. The two
+measurements its author and TAQOZ's documented, the empty loop's 72 and 32
+clocks, came out exactly, which says the three ran as their authors run
+them. The conditions are the README's: TAQOZ Reloaded from the flash (the
+ROM's V1.1 measured first, while the flash held obeam's), P2XCForth's
+newest, P2XCForthD of 2026-04-07 (attached to its author's forum post; the
+project has no repository), built for the EDGE with four changes, its
+archive of 2025-07 measured first, and OctoForth's `FILL` written in OctoGo.
+
+Third parties' benchmarks, so that the comparison is not only the
+benchmarks of this repository (`scripts/third.sh`, README.md "Third
+parties' benchmarks"): Anton Ertl's four and Martin Fraeman's Stanford
+suite of 1989, fetched at pinned hashes, run with the changes the script
+prints and a published prelude per system, at 200 MHz, timed by the host.
+On OctoForth all twelve run and pass their checks: Ertl's sieve 9,871 ms,
+bubble sort 12,558, matrix multiply 240, `34 fib` 7,743; Fraeman's Perm 896,
+Towers 1,904, Queens 1,312, Intmm 2,976, Puzzle 6,671, Quick 1,808, Bubble
+1,920, Trees 3,167. On P2XCForthD Ertl's bubble sort takes 83,678 (its `2@`
+and `2!` being the prelude's colon definitions), matrix multiply 1,286 and
+`34 fib` 23,382; its sieve does not run (its `+LOOP` ends at equality) and
+Fraeman's file does not load (no DOES>). On TAQOZ Reloaded the sieve takes
+34,380, bubble sort 78,262, matrix multiply 1,168 and `34 fib` 42,075, its
+prelude making CREATE's data its code space; Fraeman's arrays, about 69 KB,
+do not fit its 62 KB of room. On Ertl's four OctoForth is 3.0 to 6.7 times
+the speed of the other two. The
+call is the next thing to make cheaper: inlining small words and a tail
+call, M4's.
 
 M0 to M2 is the experiment the user asked about, answered with numbers; M3
 is what makes it different from every Forth on the P2; M4 is polish. At

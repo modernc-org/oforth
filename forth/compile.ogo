@@ -30,7 +30,7 @@ var (
 	// The compiler's own templates, found by name.
 	tDup, tLit, tNlit, tAugs, tCall, tJmp, tJz, tJnz, tJnc, tIf   int
 	tEnter, tExit, tRet, tTrap, tDo, tQdo, tLoop, tPloop, tUnloop int
-	tFoldPlus, tFoldMinus, tPlus, tMinus                          int
+	tFoldPlus, tFoldMinus, tPlus, tMinus, tOf                     int
 	ds0, dsMax, rp0                                               uint32
 )
 
@@ -91,6 +91,7 @@ func loadTemplates() {
 	tPloop = hiddenTpl("~+loop")
 	tFoldPlus = hiddenTpl("~+")
 	tFoldMinus = hiddenTpl("~-")
+	tOf = hiddenTpl("~of")
 	for t := 0; t < ntpl; t++ {
 		if tFlags[t]&tfHidden != 0 {
 			continue
@@ -98,6 +99,7 @@ func loadTemplates() {
 		w := define(tNames[tName[t]:tName[t]+tNlen[t]], kPrim, 0)
 		words[w].id = int32(t)
 		words[w].xt = codeAddr(cp)
+		at := cp
 		if tFlags[t]&tfCalls != 0 {
 			emitT(tEnter)
 			emitT(t)
@@ -106,6 +108,7 @@ func loadTemplates() {
 			emitT(t)
 			emitT(tRet)
 		}
+		words[w].size = int32(cp - at)
 	}
 	// Each hidden "~X" is the folded form of the primitive X.
 	for t := 0; t < ntpl; t++ {
@@ -206,8 +209,12 @@ func emitAbs(t int, a uint32) {
 	emitw(tplLong(t, 0) | a&0xfffff)
 }
 
-// resolve points the branch at code[at] to a.
+// resolve points the branch at code[at] to a. After an error it does
+// nothing: what it was given may be the empty entry a failed csPop answers.
 func resolve(at int, a uint32) {
+	if aborted {
+		return
+	}
 	code[at] = code[at]&^0xfffff | a&0xfffff
 }
 
@@ -264,6 +271,22 @@ func compileWord(w int) {
 		emitImm(tTrap, uint32(words[w].id))
 	case kConst:
 		compileLit(words[w].val)
+	case kDoes:
+		// A call of its code, which jumps to its DOES> code as it is when
+		// the call runs: another DOES> may change it.
+		flushLit()
+		emitAbs(tCall, words[w].xt)
+	case kValue:
+		compileLit(words[w].val)
+		compileWord(wFetch)
+	case kDefer:
+		compileLit(words[w].val)
+		compileWord(wFetch)
+		compileWord(wExecute)
+	case kMarker:
+		compileLit(words[w].val)
+		flushLit()
+		emitImm(tTrap, oMarkerRT)
 	}
 }
 
@@ -273,6 +296,8 @@ const (
 	csOrig = iota + 1 // a forward branch at at
 	csDest            // a backward branch's target at at
 	csDo              // a loop whose body starts at at, its LEAVEs from leave
+	csCase            // a CASE, its ENDOFs' branches from leave
+	csOf              // an OF's branch at at
 )
 
 type csEntry struct {
@@ -319,14 +344,18 @@ func addLeave(at int) {
 	nleaves++
 }
 
-// beginColon starts a definition named s.
-func beginColon(s []byte) {
+// beginColon starts a definition named s; noname is :NONAME's, whose
+// header stays hidden and whose xt ; pushes.
+var noname bool
+
+func beginColon(s []byte, anon bool) {
 	startCp = cp
 	startW = nwords
 	w := define(s, kColon, fHidden)
 	if w < 0 {
 		return
 	}
+	noname = anon
 	current = w
 	words[w].xt = codeAddr(cp)
 	ncs = 0
@@ -343,8 +372,13 @@ func endColon() {
 		return
 	}
 	emitT(tExit)
-	words[current].flags &^= fHidden
+	words[current].size = int32(cp) - int32((words[current].xt-codeAddr(0))/4)
 	setCompiling(false)
+	if noname {
+		push(words[current].xt)
+		return
+	}
+	words[current].flags &^= fHidden
 }
 
 // discard takes back a definition an error left unfinished.
@@ -374,6 +408,9 @@ func compileElse() {
 	at := cp
 	emitAbs(tJmp, 0)
 	e := csPop(csOrig)
+	if aborted {
+		return
+	}
 	resolve(int(e.at), codeAddr(cp))
 	csPush(csOrig, at, 0)
 }
@@ -381,6 +418,9 @@ func compileElse() {
 func compileThen() {
 	flushLit()
 	e := csPop(csOrig)
+	if aborted {
+		return
+	}
 	resolve(int(e.at), codeAddr(cp))
 }
 
@@ -393,12 +433,18 @@ func compileUntil() {
 	flushLit()
 	emitT(tIf)
 	e := csPop(csDest)
+	if aborted {
+		return
+	}
 	emitAbs(tJz, codeAddr(int(e.at)))
 }
 
 func compileAgain() {
 	flushLit()
 	e := csPop(csDest)
+	if aborted {
+		return
+	}
 	emitAbs(tJmp, codeAddr(int(e.at)))
 }
 
@@ -408,6 +454,9 @@ func compileWhile() {
 	at := cp
 	emitAbs(tJz, 0)
 	d := csPop(csDest)
+	if aborted {
+		return
+	}
 	csPush(csOrig, at, 0)
 	csPush(csDest, int(d.at), 0)
 }
@@ -415,8 +464,14 @@ func compileWhile() {
 func compileRepeat() {
 	flushLit()
 	d := csPop(csDest)
+	if aborted {
+		return
+	}
 	emitAbs(tJmp, codeAddr(int(d.at)))
 	o := csPop(csOrig)
+	if aborted {
+		return
+	}
 	resolve(int(o.at), codeAddr(cp))
 }
 
@@ -451,6 +506,9 @@ func compileLeave() {
 func compileLoop(plus bool) {
 	flushLit()
 	e := csPop(csDo)
+	if aborted {
+		return
+	}
 	if plus {
 		emitT(tPloop)
 		emitAbs(tJnc, codeAddr(int(e.at)))
@@ -467,13 +525,38 @@ func compileLoop(plus bool) {
 
 // standalone gives a word that pushes v the code that executes it.
 func standaloneLit(w int, v uint32) {
+	at := cp
 	words[w].xt = codeAddr(cp)
 	emitLit(v)
+	words[w].ret = int32(cp)
 	emitT(tRet)
+	words[w].size = int32(cp - at)
 }
 
 func standaloneTrap(w int) {
+	at := cp
 	words[w].xt = codeAddr(cp)
 	emitImm(tTrap, uint32(words[w].id))
 	emitT(tRet)
+	words[w].size = int32(cp - at)
+}
+
+// standaloneValue gives a VALUE the code that fetches it.
+func standaloneValue(w int, cell uint32) {
+	at := cp
+	words[w].xt = codeAddr(cp)
+	emitImm(int(tFold[words[wFetch].id]), cell)
+	emitT(tRet)
+	words[w].size = int32(cp - at)
+}
+
+// standaloneDefer gives a DEFER the code that executes what it holds.
+func standaloneDefer(w int, cell uint32) {
+	at := cp
+	words[w].xt = codeAddr(cp)
+	emitT(tEnter)
+	emitImm(int(tFold[words[wFetch].id]), cell)
+	emitT(int(words[wExecute].id))
+	emitT(tExit)
+	words[w].size = int32(cp - at)
 }
