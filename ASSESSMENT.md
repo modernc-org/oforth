@@ -32,9 +32,10 @@ compiler study were wrong and are corrected below (sections 1 and 3.4). A
 fact from a forum thread that was not saved still comes from a snippet and
 stays marked [forum snippet].
 
-## 1. Verdict (proposed)
+## 1. Verdict: go
 
-Go, after one probe. The idea is sound, the hardware fits it unusually
+The user decided go on 2026-10-28, after probe M0. The verdict as it was
+proposed: go; the one probe asked for is done. The idea is sound, the hardware fits it unusually
 well, and nobody has done it: no Forth for the P1 or the P2 has ever
 compiled a colon definition to machine code (section 3.4). The P2 executes
 code from hub RAM, so a word compiled into hub RAM runs the moment it is
@@ -42,12 +43,15 @@ written; the backend leaves sixteen cog registers and a quarter of the LUT
 to the program, which is a Forth engine's whole register file and its two
 stacks at two to three clocks an access; and OctoGo already carries PASM as
 Spin2 objects, so nothing new is needed of the compiler to start. The one
-integration point not yet seen working in OctoGo -- inline PASM in a Spin2
-method calling into generated hub code and coming back -- has a precedent
-in P2XCForth, whose C inner interpreter enters its PASM core exactly so
-(section 3.2); confirming it in OctoGo is a probe of a day on the board
-(M0), with a proven fallback (an engine on a cog of its own, p2-11's `core`
-pattern) if it fails.
+integration point not seen working in OctoGo before -- inline PASM in a
+Spin2 method calling into generated hub code and coming back -- had a
+precedent in P2XCForth, whose C inner interpreter enters its PASM core so
+(section 3.2), and was probed on the board on 2026-10-28 (M0, section 4,
+"Probe M0"): it works, a trap from a word back into OctoGo and into the
+word again works, from a nested word too, and the fallback, a word
+compiled at run time started on a cog of its own, works as well. The
+measured costs agree with the model of section 3.6 but for one item, `REP`,
+which gains nothing in hub RAM.
 
 Three corrections to the idea as it was put:
 
@@ -85,7 +89,8 @@ Three corrections to the idea as it was put:
    The LUT is the P2's PUSH/POP, so the data stack goes there, as TAQOZ's
    does below its four register cells. The return stack may be the C stack
    (CALLA/RETA on PTRA), which echoes the 8080 design, or the LUT with a
-   link register; M0 measures both.
+   link register; M0 measured both, and the LUT wins: 34 clocks a call and
+   return against 70.
 3. **"Competitive" has a shape, and the competitor is XBYTE, not TAQOZ.**
    TAQOZ's primitives cost 24 to 128 clocks each and its empty loop 32
    (section 3.1); P2XCForth's XBYTE core does `1+` in 8, a stack operation
@@ -105,8 +110,8 @@ Three corrections to the idea as it was put:
    (section 3.6). Pelc's rule of thumb from the PC Forths says the
    same: plain subroutine threading "is usually twice as fast as any ITC or
    DTC Forth", an inlining and pattern-matching generator four times or
-   more. The headline number is M0's to measure, not this file's to guess;
-   section 3.6 has the model.
+   more. M0 measured the parts (section 4); the headline numbers are M2's,
+   on whole programs, not this file's to guess; section 3.6 has the model.
 
 ## 2. What is being proposed, in one paragraph
 
@@ -470,23 +475,24 @@ source, the fig-FORTH 8080 listing.
 ### 3.6 The anchors, side by side
 
 Clocks per operation at one frequency; TAQOZ's and P2XCForth's measured by
-their authors at 200 MHz, OctoForth's estimated from the instruction
-spreadsheet for code in hub RAM with the data stack in LUT through PTRB and
-TOS in a register (section 5), to be replaced by M0's measurements:
+their authors at 200 MHz, OctoForth's for code in hub RAM with the data
+stack in LUT through PTRB and TOS in a register (section 5), measured by
+probe M0 where the cell says so (section 4, "Probe M0") and estimated from
+the instruction spreadsheet otherwise:
 
-| Operation | TAQOZ V2.8 | P2XCForth | OctoForth, estimated |
+| Operation | TAQOZ V2.8 | P2XCForth | OctoForth |
 | --- | --- | --- | --- |
-| `1+` | 24 | 8 | 2 (`add tos, #1`) |
-| `DUP` | 48 | 16 | 2 (`wrlut tos, ptrb++`) |
+| `1+` | 24 | 8 | 2 (`add tos, #1`), measured |
+| `DUP` | 48 | 16 | 2 (`wrlut tos, ptrb++`); with DROP 5, measured |
 | `DROP` | 48 | 16 | 3 (`rdlut tos, --ptrb`) |
-| `+` | 48 | 8 + a hub read | 5 (`rdlut t, --ptrb`, `add tos, t`) |
-| a literal | 10-bit inline | 8 + a hub read | 6 (`wrlut`, `augs`, `mov`) |
-| `@` | 32 | 8 + a hub read | 9 to 26 (`rdlong tos, tos`, in hubexec) |
+| `+` | 48 | 8 + a hub read | 5 (`rdlut t, --ptrb`, `add tos, t`); `3 +` 9 unfused, measured, 2 folded |
+| a literal | 10-bit inline | 8 + a hub read | 4 (`wrlut`, `mov`) to 511, 6 with `augs` |
+| `@` | 32 | 8 + a hub read | 9 to 26 (`rdlong tos, tos`, in hubexec); 17 to 18 a read in a row, measured |
 | `!` | 64 | 8 + two hub accesses | 9 to 26 (`rdlut`, `wrlong`, `rdlut`) |
 | `*` | 128 | 280 (a trap) | about 60 (CORDIC `qmul`, `getqx`) |
-| empty loop, an iteration | 32 | 72 | 17 to 24 in hub RAM; 8 to 10 in cog RAM; near 0 under `REP` |
-| call and return of an empty word | not measured | 70 | 35 to 49 (`calld` and `jmp` through a register, two LUT operations); 0 when inlined |
-| a fibonacci iteration, `swap over + loop` | 154 (measured, section 3.4) | not measured | 34 to 41 in hub RAM, primitives copied; 17 to 19 in cog RAM under `REP`; 112 to 161 if the primitives were called |
+| empty loop, an iteration | 32 | 72 | 16 in hub RAM (an `add` and a `djnz`), the same under `REP`; 6 in LUT RAM, 2 under `REP` there; measured |
+| call and return of an empty word | not measured | 70 | 34 (`calld pb` and `jmp pb`), 8 more for a word that calls, measured; 0 when inlined; CALLA/RETA 70, measured |
+| a fibonacci iteration, `swap over + loop` | 154 (measured, section 3.4) | not measured | 35 in hub RAM by M0's branch cost, primitives copied; 19 in LUT RAM under `REP`; 112 to 161 if the primitives were called |
 
 The last row is the check against the one measured series on the P2 (the
 inline compiler study, section 3.4, at 200 MHz): hub PASM 26 clocks an
@@ -494,8 +500,10 @@ iteration, cog PASM 11, TAQOZ 154, csForth about 79, TAQOZ with the
 primitives and the loop inlined 55, the macro assembler's loop 48 and 38
 cached in cog RAM. SWAP in the model here is `rdlut t, --ptrb`, `wrlut tos,
 ptrb++`, `mov tos, t` (7 clocks), OVER `wrlut tos, ptrb++`, `rdlut tos,
-ptrb[-2]` (5), `+` 5, and LOOP an `add`, a `cmps` and a taken `jmp` (17 to
-24 in hub RAM, 8 in cog RAM, nothing under `REP` but the index's `add`).
+ptrb[-2]` (5), `+` 5, and LOOP an `add`, a `cmps` and a taken `jmp` (18 in
+hub RAM by M0's 14-clock taken branch, 8 in LUT RAM, and under `REP` in LUT
+RAM nothing but the index's `add`; `REP` in hub RAM costs what the branch
+does).
 So, on the study's scale where hub PASM is 100 and TAQOZ 590: primitives
 called, 430 to 620, TAQOZ's own band; primitives copied, 130 to 157, which
 is the study's best figure with one TAQOZ stack shuffle less per word;
@@ -608,8 +616,9 @@ build made here, and flexspin's `doc/general.md`, `doc/c.md` and
   cases" before failing (general.md). What P2XCForth shows is that a `call`
   through a local, from C's optimized `__asm { }` -- the form Spin2's
   `asm`/`endasm` is -- into code that keeps the backend's conventions and
-  returns with `ret`, works in production; M0 does the same from a Spin2
-  method into generated hubexec code, and measures it. The trampoline must
+  returns with `ret`, works in production; M0 did the same from a Spin2
+  method's `orgh`/`end` block into generated hubexec code on 2026-10-28,
+  and it works (below, "Probe M0"). The trampoline must
   not be `org`/`end`, both for the `call` rule and because generated code
   may use the FCACHE area itself (section 5).
 - `_coginit(cogid, cogpgm, ptra)` starts PASM on a cog with PTRA set, and a
@@ -636,7 +645,8 @@ each, the pair shielded from interrupts, so `mov reg, ##imm` is 4 clocks
 and two longs. `ALTS`/`ALTD` 2 clocks, so a cog-RAM stack costs 4 an access.
 `REP` repeats a block with a 0-clock loop-back in cog and LUT RAM; the
 spreadsheet lists it for hub execution too, with no statement of what the
-loop-back costs there. XBYTE dispatch is 6 clocks of overhead, 8 for a
+loop-back costs there, and M0 measured it: what a taken branch costs, so
+`REP` gains nothing in hub RAM. XBYTE dispatch is 6 clocks of overhead, 8 for a
 minimal bytecode. `COGINIT`: the started cog gets S in PTRB and a preceding
 `SETQ`'s value in PTRA, and a `%1_x_xxxx` D starts it at a hub address
 directly, in hub execution, without the 504-long load of a cog image.
@@ -697,6 +707,68 @@ call besides. These agree with the spreadsheet's ranges.
   7) polls the CT event, as P2XCForth's `i_exit` does with `jnct3`. An
   engine cog (design B) runs no flexspin code and may take interrupts.
 
+**Probe M0, measured 2026-10-28** (`probe/m0`, ogo
+v0.58.1-0.20261025171618, the P2-EDGE at 160 MHz; the counts are clocks,
+which do not depend on the clock frequency). A Spin2 object holds PASM
+templates in its `DAT` and a method `run(xt, fresh)`, an `orgh`/`end` block
+that saves PTRB, sets it to the data stack pointer kept in PR7, takes
+`getct`, enters the word by `calld pb, xt` and takes `getct` again. OctoGo
+copies templates from the `DAT`'s hub address, read through
+`unsafe.Pointer`, into a package array, ORs addresses into the `calld`
+and `calla` templates, and runs the result. Each figure is the code's own,
+the cost of entering an empty word subtracted, and the same within 8
+clocks over three loads:
+
+| What | Clocks |
+| --- | --- |
+| `add pr0, #1`, a hundred in hub RAM | 2.0 each |
+| a push and a pop, `wrlut tos, ptrb++` and `rdlut tos, --ptrb` | 5.0 |
+| `3 +` unfused: a push, `mov tos, #3`, a pop to a temporary, `add` | 9.1 |
+| `rdlong`, ten in a row at one address | 17 to 18 each |
+| a loop iteration in hub RAM, `add` and a taken `djnz` | 15.9 |
+| the same under `REP`, in hub RAM | 15.9 |
+| the same in LUT RAM | 5.9 |
+| the same under `REP`, in LUT RAM | 1.9 |
+| a call and return of an empty word, `calld pb, #\B` and `jmp pb` | 33.6 |
+| a calling word's frame, PB saved to and restored from the LUT return stack | 8 |
+| a call and return by `calla` and `reta` on the C stack | 70.4 |
+| entering an empty word from the Spin2 method and back | 30 |
+| a trap: from the word to OctoGo, a dispatch that does nothing, and back | 228 |
+
+What it showed:
+
+- **Design A works.** The method compiles to a leaf that keeps its state in
+  `_var01` to `_var05`; the generated code touches only PR0-PR7, PTRB, PB
+  and LUT 0-255, and the program's listing has no other use of PB. A Spin2
+  method cannot be named after a register: names are case-insensitive, and
+  `pR0` collided with PR0.
+- **Templates copy.** A relative branch assembled in the `DAT`
+  (`djnz pr1, #$-1`) runs unchanged copied into hub RAM and into LUT RAM:
+  its offset counts instructions in both. Nothing in the probe needed an
+  encoder but the 20-bit address ORed into `calld pb, #\0` and `calla #\0`.
+- **Traps work.** A word asks with a request in PR2 and `calld pr3, pr5`,
+  PR5 holding the method's return point; OctoGo serves it -- printing TOS
+  and popping the data stack with `p2.ReadLUT` directly -- and re-enters at
+  PR3 through the same method, leaving PB alone, so a word that traps from
+  inside another returns to its caller afterwards. `7 8 + .` compiled to
+  code printed 15 through OctoGo and went on to `1+`; a word B called from A
+  printed and returned to A. 228 clocks a round trip against P2XCForth's
+  167 to 280, most of it OctoGo's dispatch.
+- **Design B works.** A word compiled at run time, started with Spin2's
+  `coginit(HUBEXEC_NEW, xt, par)`, ran on a cog of its own from its hub
+  address and wrote its result where PTRA pointed. PTRA gets the parameter
+  and PTRB the start address: the first try wrote through PTRB and
+  overwrote its own first instruction.
+- **The return stack is the LUT's.** 34 clocks a call and return with
+  CALLD and PB, 8 more for a word that calls, against 70 with CALLA/RETA.
+- **`REP` pays only in cog or LUT RAM.** In hub RAM its loop-back costs
+  what a taken branch does. A loop copied into LUT with `p2.WriteLUT` and
+  called at $200 plus its index runs 2.7 times faster, 8 times under `REP`:
+  the cog cache of M4 is where `REP` belongs.
+- Against section 3.6's estimates: the ALU, LUT and call costs as estimated
+  (a call and return 34 against 35 to 49), a hub loop iteration 16 against
+  17 to 24, and `REP` in hub RAM the one estimate that was wrong.
+
 **The board and the room.** The P2-EDGE on /dev/ttyUSB0 is shared with the
 ogo, p2-11 and obeam sessions under `flock -w 900 /tmp/p2-board.lock`; its
 flash holds TAQOZ Reloaded, so the competitor runs on the same silicon at the
@@ -742,7 +814,9 @@ word cannot call an OctoGo function, only ask the REPL to.
 
 **The call: A for the REPL, with B's image for `RUN`**, the generated code
 written to run on either, which costs it nothing since the sixteen registers
-and the LUT are enough; and B alone if M0 refuses A. The decision is M0's.
+and the LUT are enough; and B alone if A had failed. M0 found both working
+(section 4, "Probe M0"), so the call stands, for the user to confirm with
+the open points of section 9.
 
 **The engine's register file.** The data stack pointer is PTRB, so a push is
 `wrlut tos, ptrb++` and a pop `rdlut tos, --ptrb`, 2 and 3 clocks. Of the
@@ -759,11 +833,11 @@ and nothing is assumed across a call.
 data and 96 return, depth checked at a word's entry in a checked build and
 not in a release one, as OctoGo does with its own stacks. On an engine cog
 the whole LUT is free and both can be deeper. The return stack's alternative,
-PTRA with CALLA/RETA, is kept open until M0 measures the pair: 14 to 32 and
-20 to 40 clocks from hub by the spreadsheet, against two hub branches of 13
-to 20 and two LUT operations with PB as the link register; the expected
-answer is the LUT, for the reason Wuerfel_21 gave P2XCForth's author about
-PUSHA/POPA (section 3.4). A task switch, if one comes, copies the used part
+PTRA with CALLA/RETA, was measured by M0: 70 clocks a call and return,
+against 34 with CALLD and PB as the link register and 8 more for a word
+that calls, which saves PB on the LUT return stack. So the return stack is
+the LUT's, as Wuerfel_21's answer to P2XCForth's author about PUSHA/POPA
+foretold (section 3.4). A task switch, if one comes, copies the used part
 of both LUT stacks to and from hub RAM with `SETQ2` block transfers, which
 Wuerfel_21 judged cheaper than keeping the stacks in hub RAM in the first
 place.
@@ -786,8 +860,9 @@ P2XCForth's sieve went from 79 ms to 33 ms on literals alone) and literals
 meeting a foldable word are computed at compile time; and a word whose code
 is under a threshold (eight longs, say) is inlined into its callers rather
 than called, since a call and its return are two hub branches. A third,
-copying a hot loop into the FCACHE area or an engine cog's spare RAM for
-4-clock branches and `REP`, is designed for and measured in M4. VFX's full
+copying a hot loop into LUT RAM (M0 ran one there: 6 clocks an iteration
+against 16 in hub RAM, 2 under `REP`), the FCACHE area or an engine cog's
+spare RAM, is designed and measured in M4. VFX's full
 stack model is not version 1's.
 
 **The dictionary** is OctoGo's: a package array of headers (name, flags, the
@@ -819,7 +894,7 @@ the comparison the forum post rests on.
 
 | | What it shows | Mostly |
 | --- | --- | --- |
-| M0 | The probe: a Spin2 object with the hub-resident `run(xt)`, a word hand-assembled into a hub array by OctoGo, run on the main cog and back; the trap to OctoGo and back; `calld`+LUT against `calla`/`reta` for a call; `+`, `@`, a literal, a loop iteration, measured against section 3.6; the same word on an engine cog. Decides A or B and the return stack. | board, one or two sessions |
+| M0 | **Done 2026-10-28** (section 4, "Probe M0"; `probe/m0`). The probe: a Spin2 object with the hub-resident `run(xt)`, a word hand-assembled into a hub array by OctoGo, run on the main cog and back; the trap to OctoGo and back; `calld`+LUT against `calla`/`reta` for a call; `+`, `@`, a literal, a loop iteration, measured against section 3.6; the same word on an engine cog. Decides A or B and the return stack. | board, one or two sessions |
 | M1 | The kernel: about sixty primitives as PASM templates, the encoder with its host test against flexspin's assembler, `: ;`, literals with folding, IF ELSE THEN, BEGIN UNTIL WHILE REPEAT, DO LOOP +LOOP, the dictionary, the REPL on the serial line, `.` and `.S` | OctoGo, PASM |
 | M2 | CREATE DOES>, VARIABLE CONSTANT, IMMEDIATE POSTPONE `'` `[']` EXECUTE, `."` `S"`, the pictured numbers, comments, `SEE` (a disassembler of the generated code, which debugging needs anyway); the sieve, the empty loop and `fBench` (the recursive factorial, section 3.2) against TAQOZ and P2XCForth on the same board | breadth, the numbers |
 | M3 | The P2 words; `RUN` on a cog with the engine image; the embedding API, `import "oforth"`, with a table of OctoGo functions a program exports as words; a Forth monitor in one of the sibling programs as the demo | multi-cog, interop |
@@ -834,11 +909,13 @@ blocking for long, the ogo session being a directory away.
 ## 7. Risks
 
 - **The trampoline.** flexspin's rule against calls out of inline assembly
-  may hold for generated code too, by the optimizer or the assembler
-  refusing the instruction or by a convention the generated code breaks
-  unknowingly (the hardware stack's depth, a flag). P2XCForth's `call
-  startXbyte` says the C form works; M0 exists to see the Spin2 form work,
-  and B is the fallback at no loss to the experiment's core.
+  could have held for generated code too. M0 ran it on 2026-10-28 and it
+  works: an `orgh`/`end` block in a leaf method, which keeps its state in
+  `_var01` to `_var05`, and generated code that touches none of them and
+  uses no hardware stack. It works by convention, not by promise: the
+  optimizer of another backend could move the method's state elsewhere, so
+  `probe/m0` is re-run after any change of `ogo`, a minute, and B, also
+  seen working, stays the fallback.
 - **The backend's conventions are documented, not promised.** $1E0-$1EF
   and PR0-PR7's place in it, the FCACHE at $000-$0FF, LUT $200-$2FF, PTRA
   and PTRB's freedom are flexspin's choices, pinned with the backend `ogo`
@@ -888,9 +965,10 @@ blocking for long, the ogo session being a directory away.
 - A third program of a third shape: a compiler that writes and executes
   code at run time, which exercises `unsafe` stores, `uintptr` arithmetic,
   function addresses and Spin2 objects in ways p2-11 and obeam do not.
-- Whatever M0 finds about inline PASM calling generated code becomes a
-  paragraph of specs.go's "Functions implemented in Spin2", a rule either
-  way; and PR0-PR7 as the documented way a Spin2 method and the cog's PASM
+- What M0 found about inline PASM calling generated code -- it works from
+  an `orgh`/`end` block, and the method's own state is in `_var` registers
+  the called code must leave alone -- becomes a paragraph of specs.go's
+  "Functions implemented in Spin2"; and PR0-PR7 as the documented way a Spin2 method and the cog's PASM
   share a register deserves a sentence there now.
 - The intrinsics obeam already asked for and this needs too: `p2.CogID`, a
   `cogstop`, and perhaps a `p2.CogInit(image, ptra, ptrb)` so an engine
@@ -905,10 +983,12 @@ blocking for long, the ogo session being a directory away.
 ## 9. Open points for the discussion
 
 1. A or B as the home of the REPL, or A with B for `RUN` as proposed: M0
-   measures, the user decides.
+   found both working, with traps from A into OctoGo at 228 clocks; the
+   user decides.
 2. The return stack: the C stack (PTRA, CALLA/RETA), which echoes the 8080
-   design and costs two hub accesses a call, or the LUT with PB as a link
-   register. M0 measures; the LUT is expected to win (section 5).
+   design, or the LUT with PB as a link register. M0 measured 70 clocks a
+   call and return against 34 plus 8 for a calling word; the LUT is
+   proposed.
 3. How Forth-standard: ANS CORE as the target with the P2 words beside it
    (proposed), or TAQOZ's dialect so its users' scripts carry over.
 4. Where the console lives: `printf` and `p2.ReadByte` on the main cog
@@ -946,6 +1026,9 @@ blocking for long, the ogo session being a directory away.
 
 ## Sources
 
+- Probe M0: `probe/m0` in this repository, built with ogo
+  v0.58.1-0.20261025171618 and run on the P2-EDGE at 160 MHz on
+  2026-10-28, three loads.
 - OctoGo: ../ogo (README.md, DIFFERENCES.md, specs.go "Functions implemented
   in Spin2", "Package unsafe", "Function types and function values";
   CLAUDE.md "The p2 package", "The board", "Language feature policy");

@@ -17,9 +17,12 @@ It is the third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
-**Status, 2026-10-28: nothing here runs yet.** The research is done and is
-in [ASSESSMENT.md](ASSESSMENT.md); whether to build it is decided after the
-discussion of its open points, and after a probe on the board.
+**Status, 2026-10-28: no Forth runs here yet.** The research is done and is
+in [ASSESSMENT.md](ASSESSMENT.md), and so is its probe on the board,
+[probe/m0](probe/m0): code written into hub RAM at run time from PASM
+templates runs beside an OctoGo program, calls back into it, and runs on a
+cog of its own. On that, the Forth is to be built; the first milestone is
+the kernel and a REPL on the serial line.
 
 ## Why another Forth for the P2
 

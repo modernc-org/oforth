@@ -1,0 +1,267 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Probe M0 (ASSESSMENT.md section 4, "Probe M0"): code copied from PASM
+// templates into a hub array at run time, run on this cog and on a cog of its
+// own, with traps back into OctoGo; every result is in clocks.
+//
+//	ogo build ./probe/m0 && ogo loadp2 -t -p /dev/ttyUSB0 -b 230400 m0.binary
+
+import (
+	"eng"
+	"p2"
+	"unsafe"
+)
+
+const (
+	tRet = iota
+	tInc
+	tPush
+	tPop
+	tPopt
+	tAddt
+	tLit3
+	tCalld
+	tCalla
+	tReta
+	tRd
+	tRsave
+	tRinc
+	tRdec
+	tRload
+	tLoop
+	tLoop1
+	tLoop2
+	tRep
+	tRep1
+	tRep2
+	tTrap1
+	tTrap2
+	tTrapgo
+	tLit42
+	tWrpar
+	tCogid
+	tCogstop
+)
+
+var tp *[32]uint32
+var code [2048]uint32
+var n int
+var mailbox [4]uint32
+
+func emit(i int) { code[n] = tp[i]; n++ }
+
+func emitw(w uint32) { code[n] = w; n++ }
+
+func here() uint32 { return uint32(uintptr(unsafe.Pointer(&code[n]))) }
+
+// pop is OctoGo reading the engine's data stack in LUT directly.
+func pop() uint32 {
+	v := eng.Tos()
+	d := eng.DSP() - 1
+	eng.SetDSP(d)
+	eng.SetTos(p2.ReadLUT(d))
+	return v
+}
+
+var traps int
+
+// exec runs a word to its end, serving its traps.
+func exec(xt uint32) {
+	c := eng.Run(xt, 1)
+	_ = c
+	for {
+		r := eng.Req()
+		if r == 0 {
+			return
+		}
+		traps++
+		switch r {
+		case 1:
+			println("  trap: TOS", pop())
+		case 2:
+		}
+		eng.Run(eng.Cont(), 0)
+	}
+}
+
+func rep(i, k int) {
+	for j := 0; j < k; j++ {
+		emit(i)
+	}
+}
+
+func net(name string, xt, base uint32) uint32 {
+	c := eng.Run(xt, 1) - base
+	println(name, "net clocks", c, "tos", eng.Tos(), "dsp", eng.DSP(), "rp", eng.RP())
+	return c
+}
+
+func timed(name string, xt uint32) uint32 {
+	traps = 0
+	t0 := p2.GetCt()
+	exec(xt)
+	c := p2.GetCt() - t0
+	println(name, "clocks", c, "traps", traps, "tos", eng.Tos(), "dsp", eng.DSP(), "rp", eng.RP())
+	return c
+}
+
+func main() {
+	tp = (*[32]uint32)(unsafe.Pointer(uintptr(eng.Tbase())))
+	println("clock", p2.ClockFreq())
+	eng.SetDSP(0)
+	eng.SetRP(160)
+	eng.SetTos(10)
+
+	empty := here()
+	emit(tRet)
+	c0 := timed("empty, from OctoGo", empty)
+
+	// Clocks inside Run, the empty word's subtracted: what the code costs.
+	base := eng.Run(empty, 1)
+	println("empty word via Run, clocks", base)
+
+	w := here()
+	rep(tInc, 100)
+	emit(tRet)
+	net("add x100", w, base)
+
+	w = here()
+	for j := 0; j < 50; j++ {
+		emit(tPush)
+		emit(tPop)
+	}
+	emit(tRet)
+	net("push+pop x50", w, base)
+
+	w = here()
+	for j := 0; j < 50; j++ {
+		emit(tPush)
+		emit(tLit3)
+		emit(tPopt)
+		emit(tAddt)
+	}
+	emit(tRet)
+	net("3 + unfused x50", w, base)
+
+	w = here()
+	emit(tLoop)
+	emit(tLoop1)
+	emit(tLoop2)
+	emit(tRet)
+	net("djnz loop x100 in hub", w, base)
+
+	w = here()
+	emit(tRep)
+	emit(tRep1)
+	emit(tRep2)
+	emit(tRet)
+	net("rep loop x100 in hub", w, base)
+
+	w = here()
+	rep(tRd, 10)
+	emit(tRet)
+	net("rdlong x10", w, base)
+
+	// Nested calls: B is an empty word; A saves its link on the LUT return
+	// stack, calls B ten times by CALLD PB, and returns.
+	bb := here()
+	emit(tRet)
+	aa := here()
+	emit(tRsave)
+	emit(tRinc)
+	for j := 0; j < 10; j++ {
+		emitw(tp[tCalld] | bb)
+	}
+	emit(tRdec)
+	emit(tRload)
+	emit(tRet)
+	a0 := here()
+	emit(tRsave)
+	emit(tRinc)
+	emit(tRdec)
+	emit(tRload)
+	emit(tRet)
+	frame := net("A's frame alone", a0, base)
+	net("A calld B x10, A's frame subtracted", aa, base+frame)
+
+	// The same with CALLA/RETA on the C stack.
+	b2 := here()
+	emit(tReta)
+	a2 := here()
+	for j := 0; j < 10; j++ {
+		emitw(tp[tCalla] | b2)
+	}
+	emit(tRet)
+	net("A calla B x10", a2, base)
+
+	// 7 8 + . as compiled code: the dot is a trap to OctoGo.
+	w = here()
+	emit(tPush)
+	emitw(tp[tLit3] + 4) // mov pr0, #7
+	emit(tPush)
+	emitw(tp[tLit3] + 5) // mov pr0, #8
+	emit(tPopt)
+	emit(tAddt)
+	emit(tTrap1)
+	emit(tTrapgo)
+	emit(tInc)
+	emit(tRet)
+	timed("7 8 + . then 1+", w)
+
+	// A nested trap: A calls B, B traps, B returns to A, A adds one.
+	b := here()
+	emit(tPush)
+	emitw(tp[tLit3] + 97) // mov pr0, #100
+	emit(tTrap1)
+	emit(tTrapgo)
+	emit(tRet)
+	a := here()
+	emit(tRsave)
+	emit(tRinc)
+	emitw(tp[tCalld] | b)
+	emit(tInc)
+	emit(tRdec)
+	emit(tRload)
+	emit(tRet)
+	timed("A calls B, B prints 100, A adds 1", a)
+
+	// The cost of a trap that does nothing.
+	w = here()
+	for j := 0; j < 10; j++ {
+		emit(tTrap2)
+		emit(tTrapgo)
+	}
+	emit(tRet)
+	c := timed("10 empty traps", w)
+	println("  a trap round trip, clocks", (c-c0)/10)
+
+	// A hot loop copied into LUT RAM, index $F0 (cog address $2F0), run there.
+	lut := uint32(0xf0)
+	p2.WriteLUT(lut+0, tp[tLoop])
+	p2.WriteLUT(lut+1, tp[tLoop1])
+	p2.WriteLUT(lut+2, tp[tLoop2])
+	p2.WriteLUT(lut+3, tp[tRet])
+	net("djnz loop x100 in LUT", 0x200+lut, base)
+	p2.WriteLUT(lut+0, tp[tRep])
+	p2.WriteLUT(lut+1, tp[tRep1])
+	p2.WriteLUT(lut+2, tp[tRep2])
+	p2.WriteLUT(lut+3, tp[tRet])
+	net("rep loop x100 in LUT", 0x200+lut, base)
+
+	// A word compiled at run time, started on a cog of its own at its hub
+	// address: it writes 42 to the mailbox PTRB points at and stops its cog.
+	w = here()
+	emit(tLit42)
+	emit(tWrpar)
+	emit(tCogid)
+	emit(tCogstop)
+	mailbox[0] = 0
+	cog := eng.Start(w, uint32(uintptr(unsafe.Pointer(&mailbox[0]))))
+	t0 := p2.GetCt()
+	for mailbox[0] == 0 && p2.GetCt()-t0 < 160000000 {
+	}
+	println("word on cog", cog, "wrote", mailbox[0])
+	println("done")
+}

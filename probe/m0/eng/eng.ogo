@@ -1,0 +1,17 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package eng is probe M0's engine: PASM templates and the entry into code
+// written at run time, in eng.spin2.
+func Run(xt, fresh uint32) uint32
+func Tbase() uint32
+func SetTos(v uint32)
+func Tos() uint32
+func SetDSP(v uint32)
+func DSP() uint32
+func SetRP(v uint32)
+func RP() uint32
+func Req() uint32
+func Cont() uint32
+func Start(xt, par uint32) int32

@@ -1,0 +1,91 @@
+' Copyright 2026 The oforth Authors. All rights reserved.
+' Use of this source code is governed by a BSD-style
+' license that can be found in the LICENSE file.
+
+' Probe M0: run code written into hub RAM at run time, on the caller's cog.
+' PR0 = TOS, PR2 = trap request, PR3 = trap continuation, PR5 = the return
+' point in run, PR6 = return stack LUT index, PR7 = data stack pointer kept
+' between runs; PTRB is the data stack pointer while a word runs, PB the link.
+' A word returns with "jmp pb"; a trap is "mov pr2, #req" and "calld pr3, pr5".
+' fresh = 0 resumes at a continuation and leaves PB, the trapping word's link.
+
+PUB run(xt, fresh) : cyc | t, t0
+  orgh
+                mov     t, ptrb
+                mov     ptrb, pr7
+                mov     pr2, #0
+                getct   t0
+                calld   pr5, #enter
+                getct   cyc
+                mov     pr7, ptrb
+                mov     ptrb, t
+                sub     cyc, t0
+                jmp     #done
+enter
+                cmp     fresh, #0 wz
+        if_nz   mov     pb, pr5
+                jmp     xt
+done
+  end
+
+PUB start(xt, par) : cog
+  cog := coginit(HUBEXEC_NEW, xt, par)
+
+PUB tbase() : a
+  a := @tb
+
+PUB setTos(v)
+  PR0 := v
+
+PUB tos() : r
+  r := PR0
+
+PUB setDSP(v)
+  PR7 := v
+
+PUB dSP() : r
+  r := PR7
+
+PUB setRP(v)
+  PR6 := v
+
+PUB rP() : r
+  r := PR6
+
+PUB req() : r
+  r := PR2
+
+PUB cont() : r
+  r := PR3
+
+DAT
+tb
+t_ret         jmp     pb                      ' 0
+t_inc         add     pr0, #1                 ' 1
+t_push        wrlut   pr0, ptrb++             ' 2
+t_pop         rdlut   pr0, --ptrb             ' 3
+t_popt        rdlut   pr1, --ptrb             ' 4
+t_addt        add     pr0, pr1                ' 5
+t_lit3        mov     pr0, #3                 ' 6
+t_calld       calld   pb, #\0                 ' 7
+t_calla       calla   #\0                     ' 8
+t_reta        reta                            ' 9
+t_rd          rdlong  pr1, #$40               ' 10
+t_rsave       wrlut   pb, pr6                 ' 11
+t_rinc        add     pr6, #1                 ' 12
+t_rdec        sub     pr6, #1                 ' 13
+t_rload       rdlut   pb, pr6                 ' 14
+t_loop        mov     pr1, #100               ' 15
+              add     pr0, #1                 ' 16
+              djnz    pr1, #$-1               ' 17
+t_rep         mov     pr1, #100               ' 18
+              rep     #1, pr1                 ' 19
+              add     pr0, #1                 ' 20
+t_trap1       mov     pr2, #1                 ' 21  request 1: print TOS, pop
+t_trap2       mov     pr2, #2                 ' 22  request 2: nothing
+t_trapgo      calld   pr3, pr5                ' 23
+t_lit42       mov     pr0, #42                ' 24
+t_wrpar       wrlong  pr0, ptra               ' 25  new cog: PTRA = par, PTRB = start
+t_cogid       cogid   pr1                     ' 26
+t_cogstop     cogstop pr1                     ' 27
+t_jmpcall     calld   pb, #\$200              ' 28  (address ORed in)

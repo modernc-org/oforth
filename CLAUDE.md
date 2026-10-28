@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OctoForth (repository `oforth`, as OctoGo's is `ogo` and OctoBeam's is
 `obeam`; the directory was `octoforth` until the user renamed it on
-2026-10-28) is a proposed Forth for the Parallax Propeller 2, written in
+2026-10-28) is a Forth for the Parallax Propeller 2, written in
 OctoGo, the third OctoGo program after p2-11 and obeam. What is to be
 different about it: a colon definition is compiled to P2 machine code the
 moment it is defined, which the user's own Forth for the Intel 8080 did in
@@ -15,10 +15,14 @@ wordcodes, tokens, threads or XBYTE bytecodes. The user is the author of
 OctoGo (`../ogo`), p2-11 (`../p2-11`) and obeam (`../obeam`); the words were
 "Research first, discussion next, decision to go or not go the last."
 
-**Status, 2026-10-28: the research is done and there is no code.**
+**Status, 2026-10-28: go, the user's decision, after the research and probe M0.**
 `ASSESSMENT.md` is the research, written as obeam's was. Its verdict is
-"go, after one probe" (M0, a day on the board); the decision is the user's
-and has not been taken. Nothing is coded before it. An empty private
+"go"; the probe it asked for ran on the board the same day (`probe/m0`,
+ASSESSMENT.md section 4, "Probe M0"): code copied from PASM templates into
+a hub array at run time runs on the REPL's cog and on a cog of its own,
+traps back into OctoGo work, and the costs match the model but for `REP`
+in hub RAM. The user decided go the same evening. Next: the open points
+of ASSESSMENT.md section 9 settled with the user, then M1, the kernel. A private
 repository exists on GitLab (cznic/oforth, `origin`) since 2026-10-28,
 holding the documents, the logo and the licence. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
@@ -42,6 +46,11 @@ The files:
   2026-10-28; a draft until the user says otherwise). The gopher is Renee
   French's Go gopher, CC BY 4.0, by way of OctoGo's mascot: the README's
   attribution line stays while the logo does.
+- `probe/m0`: the probe, a program of its own (`main.ogo` and the Spin2
+  object `eng`), research and not the Forth: it prints clocks, and its
+  numbers are ASSESSMENT.md's. Re-run it after any change of `ogo`: the
+  call from inline PASM into generated code works by the backend's
+  convention, not by its promise.
 - `P2XCForthC.zip` and `forum/`: reference material the user downloaded and
   saved (Christof Eb.'s P2XCForth archive; six pages of the Parallax forum,
   which blocks fetching). Untracked, third parties' copyright, and never to
@@ -141,12 +150,17 @@ All measured or read in this session and recorded with their sources in
 - Inline PASM in a Spin2 method: `org`/`end` is copied to the FCACHE (128
   longs, no `call`), `orgh`/`end` is hub code unoptimized, `asm`/`endasm`
   hub code optimized. Calls out of inline PASM are officially unsupported;
-  P2XCForth's C does one in production, and seeing the Spin2 form work is
-  M0's first question.
+  P2XCForth's C does one in production, and M0 saw the Spin2 form work: an
+  `orgh`/`end` block in a leaf method, `calld pb, xt`, the word returning
+  by `jmp pb`. The method's state is in `_var01`..., which generated code
+  must not touch. A Spin2 method cannot be named after a register
+  (case-insensitive: `pR0` is PR0). Spin2's `coginit(HUBEXEC_NEW, xt, par)`
+  gives the new cog `par` in PTRA and the start address in PTRB.
 - A taken branch costs 13 to 20 clocks from hub RAM and 4 from cog or LUT
   RAM; ALU instructions 2 either way; a hub read 9 to 26 in hubexec, up to
   10 more than in a cog kernel while the FIFO refills; `REP` loops at no
-  cost in cog RAM. flexspin-compiled code is not interrupt safe, so nothing
+  cost in cog or LUT RAM and gains nothing in hub RAM (M0). A call and
+  return by CALLD/`jmp pb` is 34 clocks, CALLA/RETA 70. flexspin-compiled code is not interrupt safe, so nothing
   of OctoForth runs from an interrupt on a cog that runs OctoGo code: a
   timer is polled.
 - OctoGo has no heap, no maps, no closures; storage is package arrays; a
@@ -157,7 +171,13 @@ All measured or read in this session and recorded with their sources in
 
 ## Commands
 
-There is no code yet, so no build. When it lands it follows the siblings:
+The probe, the only code so far (the board run under the lock, as below):
+
+```sh
+ogo build -o m0.binary ./probe/m0
+```
+
+When the Forth lands it follows the siblings:
 
 ```sh
 ogo version                     # record it with every measurement
