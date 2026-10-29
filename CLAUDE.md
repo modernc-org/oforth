@@ -299,15 +299,21 @@ All measured or read in this session and recorded with their sources in
   unless marked F_CALLS (EXECUTE), whose standalone code then gets a
   frame; a branch inside it is a TJZ, DJNZ, TJS or their kind, whose
   offset counts instructions, so that it runs from cog RAM too, and such
-  a template is in `tNoRep` (FILL, WAIT-MS, WAIT-US).
+  a template is marked `tfNoRep` (FILL, WAIT-MS, WAIT-US). The loader
+  keeps of a template its code's address, its header in `tFlags` (the
+  length in the low half, and the compiler's own marks above the
+  table's flags, `tfNoInline`, `tfImpure`, `tfNoRep`), its folded form
+  and where its name is in the table, which it reads there (`tplNameOf`).
   `encref` after the table is what flexspin assembles of the encoder's
   cases, which `TestEncoder` holds the compiler to.
 - **`forth/`**: `space.ogo` the code space (P2 instructions) and the data
   space (HERE, BASE and STATE in its first cells), apart, both hub RAM, an
   address being a hub address, both arrays of the program's that `Init`
   is given (`main.ogo`'s 128 KB and 160 KB, the tests' 64 KB each, the
-  test binary having to hold the tests); `dict.ogo` the headers, names and a hash
-  table of chains, case-insensitive; `compile.ogo` the template loader, the
+  test binary having to hold the tests), the code space at most 65535
+  longs, for a header holds places in it in 16 bits; `dict.ogo` the
+  headers, 28 bytes each, names and a hash table of chains,
+  case-insensitive; `compile.ogo` the template loader, the
   emitters, the pending literal that the next primitive folds, calls, and
   the control-flow stack; `interp.ogo` input, numbers, `exec` (run, serve
   traps, resume), errors and the REPL; `words.ogo` the words OctoGo
@@ -366,7 +372,7 @@ All measured or read in this session and recorded with their sources in
 - **Inlining and tail calls** (`compile.ogo`, M4): while a definition
   compiles, `inlinable` stays true until a call, branch or trap is emitted
   (`emitAbs`, a trap), EXIT or DOES> is compiled, or a template marked in
-  `tNoInline` is (the return stack's words and EXECUTE); at `;` a body of
+  `tfNoInline` is (the return stack's words and EXECUTE); at `;` a body of
   at most `maxInline` longs is kept for copying, `id` its start and `val`
   its length plus one (an empty body inlines to nothing). A definition
   whose last long is a call (`lastCall`) with no branch resolved to just
@@ -375,7 +381,7 @@ All measured or read in this session and recorded with their sources in
   branch costing 13 to 20 clocks with its target's place.
 - **The loop cache** (`compile.ogo`, M4): `beginLoop` reserves five longs
   before a loop and `endLoop` one after it. A loop with no call or trap
-  since its start (`lastImpure`, `tImpure`) and at most `maxCache` longs is
+  since its start (`lastImpure`, `tfImpure`) and at most `maxCache` longs is
   cached if no loop around it is; an impure loop's pure inner loops
   (`cands`) are cached instead. A loop not cached is `squeeze`d: `cut`
   takes its reservations out and moves every code position the compiler
@@ -396,7 +402,7 @@ All measured or read in this session and recorded with their sources in
   loader's five, and `compileLoop` either writes there `~rep` (MOV T2,
   LIM; SUB T2, LIX WZ; IF_NZ REP with the block's length in D), for a
   LOOP whose body (`repeatable`) has no branch in `branchAt`, nothing
-  impure since its start and nothing of `tNoRep` (FILL, UNLOOP, EXECUTE,
+  impure since its start and nothing marked `tfNoRep` (FILL, UNLOOP, EXECUTE,
   WAIT-MS, WAIT-US, and EXIT, `lastNoRep`; `fNoRep` for an inlined word with any of them),
   in a loop short enough to be cached, or `cut`s them out. Such a loop is
   always cached but under `cacheOff`, which leaves the three as NOPs, or
@@ -461,8 +467,10 @@ All measured or read in this session and recorded with their sources in
   answers an entry at code[0] (a THEN with no IF once patched DUP's first
   long, which `TestRecovery` holds).
 - A new primitive is a template entry; a new OctoGo word is an `o...`
-  constant, a line in `octoWords`, a `case` in `octo` and its count in
-  `needs`; a new test is a `check` in `forth/forth_test.ogo`.
+  constant, its name at the same place in `octoNames` (the names in the
+  order of the numbers, a table since 150 calls of `octoWord` were 6 KB
+  of code) and its flags in `octoFlags` if it has any, a `case` in
+  `octo` or a later switch, and its count in `needs`; a new test is a `check` in `forth/forth_test.ogo`.
 - Spin2 traps met: a label cannot be a condition's name (`if_e` is one); in
   Spin code a CON name is a constant, so the accessors name PR0-PR7; a
   method and a DAT label cannot share a name; names are case-insensitive;

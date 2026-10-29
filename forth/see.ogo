@@ -10,7 +10,7 @@
 // as the longer.
 
 var (
-	seeOrder [maxTemplates]int32 // the templates, longest first
+	seeOrder [maxTemplates]uint8 // the templates, longest first
 	nseen    int
 )
 
@@ -20,11 +20,11 @@ func seeInit() {
 	}
 	for t := 0; t < ntpl; t++ {
 		i := nseen
-		for i > 0 && tLen[seeOrder[i-1]] < tLen[t] {
+		for i > 0 && tplLen(int(seeOrder[i-1])) < tplLen(t) {
 			seeOrder[i] = seeOrder[i-1]
 			i--
 		}
-		seeOrder[i] = int32(t)
+		seeOrder[i] = uint8(t)
 		nseen++
 	}
 }
@@ -46,7 +46,7 @@ func hex(v uint32, width int) {
 // match answers how many longs from code[at] template t is, and the
 // immediate or the address in it, AUGS or AUGD included.
 func match(t, at, end int) (int, uint32, bool) {
-	n := int(tLen[t])
+	n := int(tplLen(t))
 	if n == 0 {
 		return 0, 0, false
 	}
@@ -102,8 +102,7 @@ func match(t, at, end int) (int, uint32, bool) {
 var tplBuf [32]byte
 
 func tplName(t int) []byte {
-	n := int(tName[t])
-	s := tNames[n : n+int(tNlen[t])]
+	s := tplNameOf(t)
 	if len(s) < 2 || s[0] != '~' {
 		return s
 	}
@@ -194,7 +193,7 @@ func seeOne(at, end int) int {
 	}
 	if n, v, ok := match(tTrap, at, end); ok {
 		for w := nwords - 1; w >= 0; w-- {
-			if words[w].kind == kOcto && words[w].id == int32(v) {
+			if words[w].kind == kOcto && uint32(words[w].id) == v {
 				typeBytes(wordName(w))
 				return n
 			}

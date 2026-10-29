@@ -14,17 +14,26 @@ const (
 	tfImm    = 0x4_0000
 	tfImmD   = 0x8_0000 // the immediate is in D, after an AUGD
 	tfSlot1  = 0x10_0000
+
+	// The compiler's own, which it adds to a header.
+	tfNoInline = 0x100_0000 // no word with it may be inlined
+	tfImpure   = 0x200_0000 // calls, so no loop with it is cached
+	tfNoRep    = 0x400_0000 // breaks a REP: branches, or ends the loop
+
+	noFold = 255
 )
 
+// The templates, read from the table: the code, the header long, which has
+// the length in its low half and the flags above, the folded form, and the
+// name, which stays in the table, as an offset from the table's start.
 var (
-	tAddr  [maxTemplates]uint32 // the code
-	tLen   [maxTemplates]int32  // in longs
+	tAddr  [maxTemplates]uint32
 	tFlags [maxTemplates]uint32
-	tFold  [maxTemplates]int32 // the form with a literal folded in, or -1
-	tName  [maxTemplates]int32 // where the name is in tNames
-	tNlen  [maxTemplates]int32
-	tNames [2048]byte
+	tFold  [maxTemplates]uint8 // the form with a literal folded in, or noFold
+	tName  [maxTemplates]uint16
+	tNlen  [maxTemplates]uint8
 	ntpl   int
+	tBase  uint32
 
 	// The compiler's own templates, found by name.
 	tDup, tLit, tNlit, tAugs, tAugd, tCall, tJmp, tJz, tJnz, tJnc int
@@ -37,14 +46,19 @@ var (
 
 func tplLong(t, i int) uint32 { return peek(tAddr[t] + uint32(i)*4) }
 
+func tplLen(t int) int32 { return int32(tFlags[t] & 0xffff) }
+
+// tplNameOf answers template t's name, in the table.
+func tplNameOf(t int) []byte { return memory(tBase+uint32(tName[t]), uint32(tNlen[t])) }
+
 // loadTemplates reads the table, defines a word for each template that is
 // one, and finds the compiler's own.
 func loadTemplates() {
 	ds0 = engLayout(0)
 	dsMax = engLayout(1)
 	rp0 = engLayout(2)
-	nn := 0
 	p := engTemplates()
+	tBase = p
 	for {
 		h := peek(p)
 		if h == 0xffffffff {
@@ -56,22 +70,16 @@ func loadTemplates() {
 		t := ntpl
 		ntpl++
 		q := p + 4
-		tName[t] = int32(nn)
+		tName[t] = uint16(q - tBase)
 		for peekb(q) != 0 {
-			if nn == len(tNames) {
-				panic("template names")
-			}
-			tNames[nn] = peekb(q)
-			nn++
 			q++
 		}
-		tNlen[t] = int32(nn) - tName[t]
+		tNlen[t] = uint8(q - tBase - uint32(tName[t]))
 		q = (q + 4) &^ 3
 		tAddr[t] = q
-		tLen[t] = int32(h & 0xffff)
 		tFlags[t] = h
-		tFold[t] = -1
-		p = q + uint32(tLen[t])*4
+		tFold[t] = noFold
+		p = q + uint32(tplLen(t))*4
 	}
 	tLit = hiddenTpl("~lit")
 	tNlit = hiddenTpl("~nlit")
@@ -104,8 +112,8 @@ func loadTemplates() {
 		if tFlags[t]&tfHidden != 0 {
 			continue
 		}
-		w := define(tNames[tName[t]:tName[t]+tNlen[t]], kPrim, 0)
-		words[w].id = int32(t)
+		w := define(tplNameOf(t), kPrim, 0)
+		words[w].id = uint16(t)
 		words[w].xt = codeAddr(cp)
 		at := cp
 		if tFlags[t]&tfCalls != 0 {
@@ -116,17 +124,17 @@ func loadTemplates() {
 			emitT(t)
 			emitT(tRet)
 		}
-		words[w].size = int32(cp - at)
+		words[w].size = uint16(cp - at)
 	}
 	// Each hidden "~X" is the folded form of the primitive X.
 	for t := 0; t < ntpl; t++ {
-		n := int(tName[t])
-		if tFlags[t]&tfHidden == 0 || tNames[n] != '~' {
+		s := tplNameOf(t)
+		if tFlags[t]&tfHidden == 0 || s[0] != '~' {
 			continue
 		}
-		w := find(tNames[n+1 : n+int(tNlen[t])])
+		w := find(s[1:])
 		if w >= 0 && words[w].kind == kPrim {
-			tFold[words[w].id] = int32(t)
+			tFold[words[w].id] = uint8(t)
 		}
 	}
 	tDup = primTpl("DUP")
@@ -134,13 +142,13 @@ func loadTemplates() {
 	// What a word may not contain to be inlined: the return stack's words,
 	// which in a caller would reach the caller's frame, and calls.
 	for _, s := range [...]string{">R", "R>", "R@", "2>R", "2R>", "2R@", "I", "J", "UNLOOP", "EXECUTE"} {
-		tNoInline[primTpl(s)] = true
+		tFlags[primTpl(s)] |= tfNoInline
 	}
-	tImpure[primTpl("EXECUTE")] = true
+	tFlags[primTpl("EXECUTE")] |= tfImpure
 	// What a loop's body may not contain to be repeated by REP: a branch,
 	// and UNLOOP, which changes the loop's limit.
 	for _, s := range [...]string{"FILL", "UNLOOP", "EXECUTE", "WAIT-MS", "WAIT-US"} {
-		tNoRep[primTpl(s)] = true
+		tFlags[primTpl(s)] |= tfNoRep
 	}
 	tPlus = primTpl("+")
 	tMinus = primTpl("-")
@@ -152,10 +160,10 @@ func hiddenTpl(s string) int {
 		if int(tNlen[t]) != len(s) {
 			continue
 		}
-		n := int(tName[t])
+		n := tplNameOf(t)
 		same := true
 		for i := 0; i < len(s); i++ {
-			if tNames[n+i] != s[i] {
+			if n[i] != s[i] {
 				same = false
 				break
 			}
@@ -196,14 +204,10 @@ var (
 	bodyStart int
 	traps     bool // a trap is compiled, or a call of a word with one
 
-	tNoInline [maxTemplates]bool
-	tImpure   [maxTemplates]bool // calls, so no loop with it is cached
-	tNoRep    [maxTemplates]bool // breaks a REP: branches, or ends the loop
-
 	// For the cache of hot loops: where the definition's absolute branches
 	// are, where its last call or trap is, the loops open, and the loops
 	// found cacheable inside loops not yet ended.
-	branchAt   [1024]int32
+	branchAt   [1024]uint16
 	nbranch    int
 	lastImpure int
 	lastNoRep  int       // where the last template that breaks a REP is
@@ -234,7 +238,7 @@ func emitw(v uint32) {
 }
 
 func emitT(t int) {
-	for i := 0; i < int(tLen[t]); i++ {
+	for i := 0; i < int(tplLen(t)); i++ {
 		emitw(tplLong(t, i))
 	}
 }
@@ -254,7 +258,7 @@ func emitImm(t int, v uint32) {
 	if tFlags[t]&tfImmD != 0 {
 		aug, shift = tAugd, 9
 	}
-	for i := 0; i < int(tLen[t]); i++ {
+	for i := 0; i < int(tplLen(t)); i++ {
 		w := tplLong(t, i)
 		if i == slot {
 			if v > 511 {
@@ -274,7 +278,7 @@ func emitAbs(t int, a uint32) {
 		lastCall = cp
 		lastImpure = cp
 	} else if nbranch < len(branchAt) {
-		branchAt[nbranch] = int32(cp)
+		branchAt[nbranch] = uint16(cp)
 		nbranch++
 	} else {
 		cacheOff = true
@@ -324,7 +328,7 @@ func compileWord(w int) {
 	switch words[w].kind {
 	case kPrim:
 		t := int(words[w].id)
-		if pending && tFold[t] >= 0 {
+		if pending && tFold[t] != noFold {
 			pending = false
 			v := pendingV
 			switch {
@@ -338,13 +342,13 @@ func compileWord(w int) {
 			return
 		}
 		flushLit()
-		if tNoInline[t] {
+		if tFlags[t]&tfNoInline != 0 {
 			inlinable = false
 		}
-		if tImpure[t] {
+		if tFlags[t]&tfImpure != 0 {
 			lastImpure = cp
 		}
-		if tNoRep[t] {
+		if tFlags[t]&tfNoRep != 0 {
 			lastNoRep = cp
 		}
 		emitT(t)
@@ -508,14 +512,14 @@ func endColon() {
 	default:
 		emitT(tExit)
 		if inlinable && n <= maxInline {
-			words[current].id = int32(bodyStart)
+			words[current].id = uint16(bodyStart)
 			words[current].val = uint32(n + 1)
 			if lastNoRep >= bodyStart {
 				words[current].flags |= fNoRep
 			}
 		}
 	}
-	words[current].size = int32(cp) - int32((words[current].xt-codeAddr(0))/4)
+	words[current].size = uint16(cp - int((words[current].xt-codeAddr(0))/4))
 	if traps {
 		words[current].flags |= fTraps
 	}
@@ -658,7 +662,7 @@ func cut(at, n int) {
 	lo := codeAddr(at)
 	for i := 0; i < nbranch; i++ {
 		p := moved(int(branchAt[i]), at, n)
-		branchAt[i] = int32(p)
+		branchAt[i] = uint16(p)
 		if a := code[p] & 0xfffff; a > lo {
 			code[p] = code[p]&^0xfffff | codeAddr(moved(int(a-codeAddr(0))/4, at, n))&0xfffff
 		}
@@ -888,9 +892,9 @@ func standaloneLit(w int, v uint32) {
 	at := cp
 	words[w].xt = codeAddr(cp)
 	emitLit(v)
-	words[w].ret = int32(cp)
+	words[w].ret = uint16(cp)
 	emitT(tRet)
-	words[w].size = int32(cp - at)
+	words[w].size = uint16(cp - at)
 }
 
 func standaloneTrap(w int) {
@@ -898,7 +902,7 @@ func standaloneTrap(w int) {
 	words[w].xt = codeAddr(cp)
 	emitImm(tTrap, uint32(words[w].id))
 	emitT(tRet)
-	words[w].size = int32(cp - at)
+	words[w].size = uint16(cp - at)
 }
 
 // standaloneValue gives a VALUE the code that fetches it.
@@ -907,7 +911,7 @@ func standaloneValue(w int, cell uint32) {
 	words[w].xt = codeAddr(cp)
 	emitImm(int(tFold[words[wFetch].id]), cell)
 	emitT(tRet)
-	words[w].size = int32(cp - at)
+	words[w].size = uint16(cp - at)
 }
 
 // standalone2 gives a 2CONSTANT the code that pushes its cells, and a
@@ -924,7 +928,7 @@ func standalone2(w int, fetch bool) {
 		emitLit(peek(wp.val + 4))
 	}
 	emitT(tRet)
-	wp.size = int32(cp - at)
+	wp.size = uint16(cp - at)
 }
 
 // standaloneDefer gives a DEFER the code that executes what it holds.
@@ -935,5 +939,5 @@ func standaloneDefer(w int, cell uint32) {
 	emitImm(int(tFold[words[wFetch].id]), cell)
 	emitT(int(words[wExecute].id))
 	emitT(tExit)
-	words[w].size = int32(cp - at)
+	words[w].size = uint16(cp - at)
 }

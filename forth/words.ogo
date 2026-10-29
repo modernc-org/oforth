@@ -68,7 +68,6 @@ const (
 	oSmRem
 	oDecimal
 	oHex
-	oFill
 	oMove
 	oAbort
 	oDoes
@@ -172,7 +171,7 @@ var wType, wFetch, wStore, wExecute, wDrop, wAbort, w2Fetch, w2Store int
 
 func octoWord(s string, id int, flags uint8) int {
 	w := defineStr(s, kOcto, flags)
-	words[w].id = int32(id)
+	words[w].id = uint16(id)
 	standaloneTrap(w)
 	return w
 }
@@ -183,8 +182,73 @@ func constWord(s string, v uint32) {
 	standaloneLit(w, v)
 }
 
+// octoNames are the OctoGo words' names in the order of their numbers, oDot's
+// first, parted by white space; octoFlags has the flags of those with any.
+// A table, not a call for each word, as the code of 150 calls is 6 KB.
+const octoNames = `. U. .R U.R .S EMIT CR SPACE SPACES TYPE KEY WORDS : ; IMMEDIATE ( \ .(
+HERE , C, ALLOT ALIGN ALIGNED CONSTANT VARIABLE CREATE ' ['] RECURSE IF
+ELSE THEN BEGIN UNTIL AGAIN WHILE REPEAT DO ?DO LOOP +LOOP LEAVE EXIT [
+] LITERAL ." S" CHAR [CHAR] */ */MOD FM/MOD SM/REM DECIMAL HEX MOVE
+ABORT DOES> ~does >BODY POSTPONE COMPILE, <# # #S #> HOLD HOLDS SIGN
+EVALUATE SOURCE SOURCE-ID WORD FIND >NUMBER PARSE PARSE-NAME ACCEPT QUIT
+ABORT" ~abort" ENVIRONMENT? CASE OF ENDOF ENDCASE VALUE TO DEFER IS
+ACTION-OF :NONAME ERASE ROLL UNUSED BUFFER: C" REFILL SEE MARKER ~marker
+SAVE-INPUT RESTORE-INPUT DEFER@ DEFER! S\" RECURSIVE INCLUDED INCLUDE
+INCLUDE-FILE OPEN-FILE CLOSE-FILE READ-FILE READ-LINE BIN CREATE-FILE
+WRITE-FILE WRITE-LINE FLUSH-FILE FILE-POSITION FILE-SIZE REPOSITION-FILE
+RESIZE-FILE DELETE-FILE RENAME-FILE FILE-STATUS REQUIRED REQUIRE RUN
+CATCH THROW 2CONSTANT 2VARIABLE 2VALUE 2LITERAL D. D.R M*/ -TRAILING
+BLANK CMOVE CMOVE> COMPARE SEARCH SLITERAL UNESCAPE SUBSTITUTE REPLACES`
+
+const fIC = fImmediate | fCompile
+
+var octoFlags = [...]struct{ id, flags uint8 }{
+	{oSemicolon, fIC},
+	{oParen, fImmediate},
+	{oBackslash, fImmediate},
+	{oDotParen, fImmediate},
+	{oBracketTick, fIC},
+	{oRecurse, fIC},
+	{oIf, fIC},
+	{oElse, fIC},
+	{oThen, fIC},
+	{oBegin, fIC},
+	{oUntil, fIC},
+	{oAgain, fIC},
+	{oWhile, fIC},
+	{oRepeat, fIC},
+	{oDo, fIC},
+	{oQDo, fIC},
+	{oLoop, fIC},
+	{oPlusLoop, fIC},
+	{oLeave, fIC},
+	{oExit, fIC},
+	{oLeftBracket, fIC},
+	{oLiteral, fIC},
+	{oDotQuote, fIC},
+	{oSQuote, fImmediate},
+	{oBracketChar, fIC},
+	{oDoes, fIC},
+	{oDoesRT, fHidden},
+	{oPostpone, fIC},
+	{oAbortQuote, fIC},
+	{oAbortQRT, fHidden},
+	{oCase, fIC},
+	{oOf, fIC},
+	{oEndof, fIC},
+	{oEndcase, fIC},
+	{oTo, fImmediate},
+	{oIs, fImmediate},
+	{oActionOf, fImmediate},
+	{oCQuote, fIC},
+	{oMarkerRT, fHidden},
+	{oSQuoteEsc, fImmediate},
+	{oRecursive, fIC},
+	{o2Literal, fIC},
+	{oSLiteral, fIC},
+}
+
 func octoWords() {
-	const ic = fImmediate | fCompile
 	// The words whose compile semantics use others look them up first.
 	wFetch = findStr("@")
 	w2Fetch = findStr("2@")
@@ -192,156 +256,29 @@ func octoWords() {
 	wStore = findStr("!")
 	wExecute = findStr("EXECUTE")
 	wDrop = findStr("DROP")
-	octoWord(".", oDot, 0)
-	octoWord("U.", oUDot, 0)
-	octoWord(".R", oDotR, 0)
-	octoWord("U.R", oUDotR, 0)
-	octoWord(".S", oDotS, 0)
-	octoWord("EMIT", oEmit, 0)
-	octoWord("CR", oCr, 0)
-	octoWord("SPACE", oSpace, 0)
-	octoWord("SPACES", oSpaces, 0)
-	wType = octoWord("TYPE", oType, 0)
-	octoWord("KEY", oKey, 0)
-	octoWord("WORDS", oWords, 0)
-	octoWord(":", oColon, 0)
-	octoWord(";", oSemicolon, ic)
-	octoWord("IMMEDIATE", oImmediate, 0)
-	octoWord("(", oParen, fImmediate)
-	octoWord("\\", oBackslash, fImmediate)
-	octoWord(".(", oDotParen, fImmediate)
-	octoWord("HERE", oHere, 0)
-	octoWord(",", oComma, 0)
-	octoWord("C,", oCComma, 0)
-	octoWord("ALLOT", oAllot, 0)
-	octoWord("ALIGN", oAlign, 0)
-	octoWord("ALIGNED", oAligned, 0)
-	octoWord("CONSTANT", oConstant, 0)
-	octoWord("VARIABLE", oVariable, 0)
-	octoWord("CREATE", oCreate, 0)
-	octoWord("'", oTick, 0)
-	octoWord("[']", oBracketTick, ic)
-	octoWord("RECURSE", oRecurse, ic)
-	octoWord("IF", oIf, ic)
-	octoWord("ELSE", oElse, ic)
-	octoWord("THEN", oThen, ic)
-	octoWord("BEGIN", oBegin, ic)
-	octoWord("UNTIL", oUntil, ic)
-	octoWord("AGAIN", oAgain, ic)
-	octoWord("WHILE", oWhile, ic)
-	octoWord("REPEAT", oRepeat, ic)
-	octoWord("DO", oDo, ic)
-	octoWord("?DO", oQDo, ic)
-	octoWord("LOOP", oLoop, ic)
-	octoWord("+LOOP", oPlusLoop, ic)
-	octoWord("LEAVE", oLeave, ic)
-	octoWord("EXIT", oExit, ic)
-	octoWord("[", oLeftBracket, ic)
-	octoWord("]", oRightBracket, 0)
-	octoWord("LITERAL", oLiteral, ic)
-	octoWord(".\"", oDotQuote, ic)
-	octoWord("S\"", oSQuote, fImmediate)
-	octoWord("CHAR", oChar, 0)
-	octoWord("[CHAR]", oBracketChar, ic)
-	octoWord("*/", oStarSlash, 0)
-	octoWord("*/MOD", oStarSlashMod, 0)
-	octoWord("FM/MOD", oFmMod, 0)
-	octoWord("SM/REM", oSmRem, 0)
-	octoWord("DECIMAL", oDecimal, 0)
-	octoWord("HEX", oHex, 0)
-	octoWord("MOVE", oMove, 0)
-	wAbort = octoWord("ABORT", oAbort, 0)
-	octoWord("DOES>", oDoes, ic)
-	octoWord("~does", oDoesRT, fHidden)
-	octoWord(">BODY", oToBody, 0)
-	octoWord("POSTPONE", oPostpone, ic)
-	octoWord("COMPILE,", oCompileComma, 0)
-	octoWord("<#", oLessHash, 0)
-	octoWord("#", oHash, 0)
-	octoWord("#S", oHashS, 0)
-	octoWord("#>", oHashGreater, 0)
-	octoWord("HOLD", oHold, 0)
-	octoWord("HOLDS", oHolds, 0)
-	octoWord("SIGN", oSign, 0)
-	octoWord("EVALUATE", oEvaluate, 0)
-	octoWord("SOURCE", oSource, 0)
-	octoWord("SOURCE-ID", oSourceID, 0)
-	octoWord("WORD", oWord, 0)
-	octoWord("FIND", oFind, 0)
-	octoWord(">NUMBER", oToNumber, 0)
-	octoWord("PARSE", oParse, 0)
-	octoWord("PARSE-NAME", oParseName, 0)
-	octoWord("ACCEPT", oAccept, 0)
-	octoWord("QUIT", oQuit, 0)
-	octoWord("ABORT\"", oAbortQuote, ic)
-	octoWord("~abort\"", oAbortQRT, fHidden)
-	octoWord("ENVIRONMENT?", oEnvironment, 0)
-	octoWord("CASE", oCase, ic)
-	octoWord("OF", oOf, ic)
-	octoWord("ENDOF", oEndof, ic)
-	octoWord("ENDCASE", oEndcase, ic)
-	octoWord("VALUE", oValue, 0)
-	octoWord("TO", oTo, fImmediate)
-	octoWord("DEFER", oDefer, 0)
-	octoWord("IS", oIs, fImmediate)
-	octoWord("ACTION-OF", oActionOf, fImmediate)
-	octoWord(":NONAME", oNoname, 0)
-	octoWord("ERASE", oErase, 0)
-	octoWord("ROLL", oRoll, 0)
-	octoWord("UNUSED", oUnused, 0)
-	octoWord("BUFFER:", oBuffer, 0)
-	octoWord("C\"", oCQuote, ic)
-	octoWord("REFILL", oRefill, 0)
-	octoWord("SEE", oSee, 0)
-	octoWord("MARKER", oMarker, 0)
-	octoWord("~marker", oMarkerRT, fHidden)
-	octoWord("SAVE-INPUT", oSaveInput, 0)
-	octoWord("RESTORE-INPUT", oRestoreInput, 0)
-	octoWord("DEFER@", oDeferFetch, 0)
-	octoWord("DEFER!", oDeferStore, 0)
-	octoWord("S\\\"", oSQuoteEsc, fImmediate)
-	octoWord("RECURSIVE", oRecursive, ic)
-	octoWord("INCLUDED", oIncluded, 0)
-	octoWord("INCLUDE", oInclude, 0)
-	octoWord("INCLUDE-FILE", oIncludeFile, 0)
-	octoWord("OPEN-FILE", oOpenFile, 0)
-	octoWord("CLOSE-FILE", oCloseFile, 0)
-	octoWord("READ-FILE", oReadFile, 0)
-	octoWord("READ-LINE", oReadLine, 0)
-	octoWord("BIN", oBin, 0)
-	octoWord("CREATE-FILE", oCreateFile, 0)
-	octoWord("WRITE-FILE", oWriteFile, 0)
-	octoWord("WRITE-LINE", oWriteLine, 0)
-	octoWord("FLUSH-FILE", oFlushFile, 0)
-	octoWord("FILE-POSITION", oFilePosition, 0)
-	octoWord("FILE-SIZE", oFileSize, 0)
-	octoWord("REPOSITION-FILE", oRepositionFile, 0)
-	octoWord("RESIZE-FILE", oResizeFile, 0)
-	octoWord("DELETE-FILE", oDeleteFile, 0)
-	octoWord("RENAME-FILE", oRenameFile, 0)
-	octoWord("FILE-STATUS", oFileStatus, 0)
-	octoWord("REQUIRED", oRequired, 0)
-	octoWord("REQUIRE", oRequire, 0)
-	octoWord("RUN", oRun, 0)
-	octoWord("CATCH", oCatch, 0)
-	octoWord("THROW", oThrow, 0)
-	octoWord("2CONSTANT", o2Constant, 0)
-	octoWord("2VARIABLE", o2Variable, 0)
-	octoWord("2VALUE", o2Value, 0)
-	octoWord("2LITERAL", o2Literal, ic)
-	octoWord("D.", oDDot, 0)
-	octoWord("D.R", oDDotR, 0)
-	octoWord("M*/", oMStarSlash, 0)
-	octoWord("-TRAILING", oDashTrailing, 0)
-	octoWord("BLANK", oBlank, 0)
-	octoWord("CMOVE", oCMove, 0)
-	octoWord("CMOVE>", oCMoveUp, 0)
-	octoWord("COMPARE", oCompare, 0)
-	octoWord("SEARCH", oSearch, 0)
-	octoWord("SLITERAL", oSLiteral, ic)
-	octoWord("UNESCAPE", oUnescape, 0)
-	octoWord("SUBSTITUTE", oSubstitute, 0)
-	octoWord("REPLACES", oReplaces, 0)
+	id := oDot
+	for i := 0; i < len(octoNames); {
+		for i < len(octoNames) && isSpace(octoNames[i]) {
+			i++
+		}
+		j := i
+		for j < len(octoNames) && !isSpace(octoNames[j]) {
+			j++
+		}
+		if j > i {
+			f := uint8(0)
+			for _, e := range octoFlags {
+				if int(e.id) == id {
+					f = e.flags
+				}
+			}
+			octoWord(octoNames[i:j], id, f)
+			id++
+		}
+		i = j
+	}
+	wType = findStr("TYPE")
+	wAbort = findStr("ABORT")
 	constWord("R/O", famRO)
 	constWord("W/O", famWO)
 	constWord("R/W", famRW)
@@ -368,6 +305,9 @@ func findStr(s string) int {
 // the templates' words, OctoGo's, and the empty stacks. It is called once.
 // The data space must have room for the system's cells, dataFirst bytes.
 func Init(codeSpace, dataSpace []uint32) {
+	if len(codeSpace) > 65535 {
+		panic("the code space is over 65535 longs")
+	}
 	code = codeSpace
 	data = dataSpace
 	for i := range bucket {
@@ -510,7 +450,7 @@ func needs(id int) int {
 		return 1
 	case oDotR, oUDotR, oType:
 		return 2
-	case oStarSlash, oStarSlashMod, oFmMod, oSmRem, oFill, oMove, oAbortQRT:
+	case oStarSlash, oStarSlashMod, oFmMod, oSmRem, oMove, oAbortQRT:
 		return 3
 	case oDoesRT, oToBody, oCompileComma, oHold, oSign, oWord, oFind,
 		oParse, oValue, oRoll, oBuffer, oQuit:
@@ -766,13 +706,6 @@ func octo(id int) {
 		data[cellBase] = 10
 	case oHex:
 		data[cellBase] = 16
-	case oFill:
-		c := byte(pop())
-		n := pop()
-		a := pop()
-		for i := uint32(0); i < n; i++ {
-			pokeb(a+i, c)
-		}
 	case oMove:
 		n := pop()
 		d := pop()
@@ -885,7 +818,7 @@ func octo2(id int) {
 		w := nwords - 1
 		// The word may have DOES> code already: a second DOES> replaces
 		// it, as when a DOES> part runs another.
-		if w < 0 || words[w].kind != kConst && words[w].kind != kDoes || words[w].ret < 0 {
+		if w < 0 || words[w].kind != kConst && words[w].kind != kDoes || words[w].ret == noRet {
 			abort("DOES> without CREATE")
 			return
 		}
@@ -1210,7 +1143,7 @@ func octo2(id int) {
 		emitLit(uint32(m))
 		emitImm(tTrap, oMarkerRT)
 		emitT(tRet)
-		words[w].size = int32(cp - at)
+		words[w].size = uint16(cp - at)
 	case oMarkerRT:
 		backTo(int(pop()))
 	case oSaveInput:

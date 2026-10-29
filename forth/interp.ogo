@@ -39,10 +39,12 @@ func fromMemory(a, n uint32) {
 }
 
 // The output goes to the serial line when Console is set, a newline as CR
-// LF, and otherwise into out, where a test reads it.
+// LF, and otherwise into out, where a test reads it: 256 bytes, which a line
+// of SEE needs, the tests giving it room of their own.
 var (
 	Console bool
-	out     [2048]byte
+	outBuf  [256]byte
+	out     = outBuf[:]
 	nout    int
 )
 

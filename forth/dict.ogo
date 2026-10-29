@@ -29,23 +29,27 @@ const (
 	fImmediate = 1 << iota
 	fHidden    // a definition not yet ended
 	fCompile   // compile only
-	fNoRep     // inlined, its body breaks a REP (compile.ogo's tNoRep)
+	fNoRep     // inlined, its body breaks a REP (compile.ogo's tfNoRep)
 	fTraps     // calls OctoGo, by a trap of its own or in a word it calls
 )
 
+// A word's header, 28 bytes, the fields that are places in the code space
+// 16 bits, which keeps the code space to 65535 longs (Init).
 type word struct {
-	name  int32 // where the name is in names
+	xt    uint32 // the code that executes the word, which every word has
+	val   uint32 // what a kConst pushes, the cell of a kValue or kDefer
+	does  uint32 // a kDoes's code after DOES>
+	name  uint16 // where the name is in names
+	id    uint16 // the template of a kPrim, the number of a kOcto
+	ret   uint16 // a kConst's last long, the return DOES> replaces, or noRet
+	size  uint16 // the longs of the code at xt, for SEE
+	next  int16  // the next word of the bucket, -1 at the end
 	nlen  uint8
 	kind  uint8
 	flags uint8
-	next  int32  // the next word of the bucket, -1 at the end
-	xt    uint32 // the code that executes the word, which every word has
-	id    int32  // the template of a kPrim, the number of a kOcto
-	val   uint32 // what a kConst pushes, the cell of a kValue or kDefer
-	does  uint32 // a kDoes's code after DOES>
-	ret   int32  // a kConst's last long, the return DOES> replaces
-	size  int32  // the longs of the code at xt, for SEE
 }
+
+const noRet = 0xffff
 
 var (
 	words  [maxWords]word
@@ -110,7 +114,7 @@ func define(s []byte, kind, flags uint8) int {
 	}
 	w := nwords
 	nwords++
-	words[w].name = int32(nnames)
+	words[w].name = uint16(nnames)
 	words[w].nlen = uint8(len(s))
 	for _, c := range s {
 		names[nnames] = c
@@ -122,10 +126,10 @@ func define(s []byte, kind, flags uint8) int {
 	words[w].id = 0
 	words[w].val = 0
 	words[w].does = 0
-	words[w].ret = -1
+	words[w].ret = noRet
 	words[w].size = 0
 	h := hash(s)
-	words[w].next = bucket[h]
+	words[w].next = int16(bucket[h])
 	bucket[h] = int32(w)
 	return w
 }
@@ -151,7 +155,7 @@ func forget() {
 	w := nwords - 1
 	n := int(words[w].name)
 	h := hash(names[n : n+int(words[w].nlen)])
-	bucket[h] = words[w].next
+	bucket[h] = int32(words[w].next)
 	nnames = n
 	nwords = w
 }

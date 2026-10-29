@@ -38,7 +38,7 @@ func Define(name string, in int, f func()) bool {
 	}
 	exported[nexported] = f
 	exportedIn[nexported] = uint8(in)
-	words[w].id = int32(oExported + nexported)
+	words[w].id = uint16(oExported + nexported)
 	standaloneTrap(w)
 	nexported++
 	return true

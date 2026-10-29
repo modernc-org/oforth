@@ -17,7 +17,13 @@ var (
 	testData [16384]uint32
 )
 
-func init() { Init(testCode[:], testData[:]) }
+// testOut is where the output goes, for the tests read it.
+var testOut [2048]byte
+
+func init() {
+	out = testOut[:]
+	Init(testCode[:], testData[:])
+}
 
 func same(got []byte, want string) bool {
 	if len(got) != len(want) {
