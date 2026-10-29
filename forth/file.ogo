@@ -498,13 +498,16 @@ func saveFile(k int) (uint32, uint32) {
 }
 
 // restoreFile makes the line of the k-th file included that starts at
-// start, and is its line-th, the input source again.
-func restoreFile(k int, start, line uint32) bool {
+// start, and is its n-th, the input source again. (n is not named line:
+// OctoGo takes a name of a function standing alone for that function used
+// as a value, and line, a func() bool, would then seem callable through
+// Avail, making the file layer look recursive.)
+func restoreFile(k int, start, n uint32) bool {
 	f := int(incl[k].f)
 	if !fileSeek(f, start) {
 		return false
 	}
-	incl[k].line = int32(line) - 1
+	incl[k].line = int32(n) - 1
 	return refillFile(k)
 }
 
