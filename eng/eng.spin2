@@ -190,6 +190,16 @@ tuck_b        rdlut   t1, ptrb[-1]
               wrlut   tos, ptrb[-1]
               wrlut   t1, ptrb++
 tuck_e
+              long    (@sstr_e - @sstr_b) >> 2
+              byte    "/STRING", 0
+              alignl
+sstr_b        rdlut   t1, --ptrb
+              sub     t1, tos
+              rdlut   t2, ptrb[-1]
+              add     t2, tos
+              wrlut   t2, ptrb[-1]
+              mov     tos, t1
+sstr_e
               long    (@qdup_e - @qdup_b) >> 2
               byte    "?DUP", 0
               alignl

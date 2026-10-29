@@ -4,15 +4,13 @@
 
 import "unsafe"
 
-// The two spaces. Code is P2 instructions, written by the compiler and run
-// where they are; data is the space HERE, ALLOT and "," address, which ANS
-// Forth calls the data space. They are apart so that data laid down after a
-// CREATE never lands in the middle of code. Both are hub RAM, and a Forth
-// address is a hub address.
+// The two spaces, which the program gives Init, so that it says how much
+// of the hub RAM they have. Code is P2 instructions, written by the
+// compiler and run where they are; data is the space HERE, ALLOT and ","
+// address, which ANS Forth calls the data space. They are apart so that
+// data laid down after a CREATE never lands in the middle of code. Both
+// are hub RAM, and a Forth address is a hub address.
 const (
-	codeLongs = 32768 // 128 KB
-	dataLongs = 40960 // 160 KB
-
 	// The cells at the bottom of the data space that the system keeps.
 	cellBase  = 0  // BASE
 	cellState = 1  // STATE
@@ -22,10 +20,10 @@ const (
 )
 
 var (
-	code [codeLongs]uint32
+	code []uint32
 	cp   int // the next free long of the code space
 
-	data [dataLongs]uint32
+	data []uint32
 )
 
 func codeAddr(i int) uint32 {
@@ -54,7 +52,7 @@ func pokeb(a uint32, v byte) { *(*byte)(unsafe.Pointer(uintptr(a))) = v }
 // having aborted, when that leaves the data space.
 func allot(n int32) bool {
 	d := int32(dpOff()) + n
-	if d < dataFirst || d > dataLongs*4 {
+	if d < dataFirst || d > int32(len(data))*4 {
 		abort("data space")
 		return false
 	}

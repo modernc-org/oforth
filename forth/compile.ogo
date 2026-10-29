@@ -224,7 +224,7 @@ const maxCache = 240
 const maxInline = 16
 
 func emitw(v uint32) {
-	if cp >= codeLongs {
+	if cp >= len(code) {
 		abort("code space full")
 		return
 	}

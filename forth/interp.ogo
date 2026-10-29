@@ -44,7 +44,7 @@ func fromMemory(a, n uint32) {
 // LF, and otherwise into out, where a test reads it.
 var (
 	Console bool
-	out     [4096]byte
+	out     [2048]byte
 	nout    int
 )
 

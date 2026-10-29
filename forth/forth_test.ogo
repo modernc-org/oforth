@@ -12,7 +12,14 @@ import (
 // The tests run Forth source on the board and compare what it writes. Each
 // leaves the stack empty, which check holds them to.
 
-func init() { Init() }
+// The tests' code and data spaces, smaller than the REPL's, the test
+// binary having to hold the tests too.
+var (
+	testCode [16384]uint32
+	testData [16384]uint32
+)
+
+func init() { Init(testCode[:], testData[:]) }
 
 func same(got []byte, want string) bool {
 	if len(got) != len(want) {
@@ -478,10 +485,11 @@ func TestRep(t *testing.T) {
 	checkNot(t, "SEE rn6", "REP ")
 }
 
-// The host's files for TestInclude: a 9P server in the test, which reads
-// the messages the client writes into out, takes them out of it, and
-// answers by Key, as the loader does over the serial line. Its messages
-// are shorter than the client's, so that reads are cut to its size.
+// The host's files for TestInclude and TestFile: a 9P server in the test,
+// which reads the messages the client writes into out, takes them out of
+// it, and answers by Key, as the loader does over the serial line. Its
+// messages are shorter than the client's, so that reads and writes are cut
+// to its size. One file can be written, hostW.
 type hostFile struct {
 	name string
 	text string
@@ -497,8 +505,10 @@ var (
 		{"d.fth", "( a comment\nover lines ) 8 .\nSOURCE-ID 0> .\nREFILL\n7 .\n"},
 		{"e.txt", "one\r\ntwo\rthree\nlast"},
 		{"big.fth", ""}, // hostBig
+		{"r.fth", "1+\n"},
+		{"s.fth", "VARIABLE siv -1 siv !\n: ?back siv @ IF 0 siv ! RESTORE-INPUT THEN ;\n11 SAVE-INPUT\n?back\n. .\n"},
 	}
-	hostBig   [3000]byte
+	hostBig   [1200]byte
 	nbig      int
 	hostFid   [16]int // the file a fid stands for, -1 for none, -2 the root
 	hostOut   [hostMsize]byte
@@ -506,12 +516,22 @@ var (
 	phost     int
 	hostSays  bool   // whether the host answers at all
 	hostTyped string // what is typed before the next reply
+
+	hostWName  [16]byte
+	nhostWName int
+	hostW      [640]byte
+	nhostW     int
+	hostWUsed  bool
 )
+
+const hostWFile = 100 // what hostFid has for hostW
 
 // hostRead copies n bytes of the file i from off into the reply.
 func hostRead(i, off, n int) {
 	for k := off; k < off+n; k++ {
-		if hostFiles[i].name == "big.fth" {
+		if i == hostWFile {
+			hostOut[nhost] = hostW[k]
+		} else if hostFiles[i].name == "big.fth" {
 			hostOut[nhost] = hostBig[k]
 		} else {
 			hostOut[nhost] = hostFiles[i].text[k]
@@ -521,6 +541,12 @@ func hostRead(i, off, n int) {
 }
 
 func hostLen(i int) int {
+	if i < 0 {
+		return 0
+	}
+	if i == hostWFile {
+		return nhostW
+	}
 	if hostFiles[i].name == "big.fth" {
 		return nbig
 	}
@@ -554,6 +580,22 @@ func hostReply(t byte, tag uint32) {
 	nhost = 4
 	hostPut(uint32(t), 1)
 	hostPut(tag, 2)
+}
+
+func hostErr(tag uint32, s string) {
+	hostReply(rError, tag)
+	hostStr(s)
+}
+
+// hostGrow makes hostW n bytes long, as far as it holds.
+func hostGrow(n int) {
+	for nhostW < n && nhostW < len(hostW) {
+		hostW[nhostW] = 0
+		nhostW++
+	}
+	if n < nhostW {
+		nhostW = n
+	}
 }
 
 // hostServe answers the message the client wrote last, if there is one,
@@ -602,25 +644,98 @@ func hostServe() {
 			n += copy(name[n:], m[p+2:p+2+l])
 			p += 2 + l
 		}
+		f := -1
+		if n == 0 {
+			f = -2
+		}
+		if hostWUsed && bytesEq(name[:n], hostWName[:nhostWName]) {
+			f = hostWFile
+		}
 		for i := range hostFiles {
 			if same(name[:n], hostFiles[i].name) {
-				hostFid[newfid] = i
-				hostReply(tWalk+1, tag)
-				hostPut(uint32(nw), 2)
-				for j := 0; j < nw; j++ {
-					hostPut(0, 13)
-				}
-				break
+				f = i
 			}
 		}
-		if hostFid[newfid] < 0 {
-			hostReply(rError, tag)
-			hostStr("file does not exist")
+		if f == -1 {
+			hostErr(tag, "file does not exist")
+			break
+		}
+		hostFid[newfid] = f
+		hostReply(tWalk+1, tag)
+		hostPut(uint32(nw), 2)
+		for j := 0; j < nw; j++ {
+			hostPut(0, 13)
 		}
 	case tOpen:
+		if m[11]&oTrunc != 0 && hostFid[hostGet(m, 7, 4)] == hostWFile {
+			nhostW = 0
+		}
 		hostReply(tOpen+1, tag)
 		hostPut(0, 13)
 		hostPut(0, 4)
+	case tCreate:
+		if hostWUsed {
+			hostErr(tag, "file exists")
+			break
+		}
+		l := int(hostGet(m, 11, 2))
+		nhostWName = copy(hostWName[:], m[13:13+l])
+		nhostW = 0
+		hostWUsed = true
+		hostFid[hostGet(m, 7, 4)] = hostWFile
+		hostReply(tCreate+1, tag)
+		hostPut(0, 13)
+		hostPut(0, 4)
+	case tWrite:
+		if hostFid[hostGet(m, 7, 4)] != hostWFile {
+			hostErr(tag, "permission denied")
+			break
+		}
+		off := int(hostGet(m, 11, 4))
+		n := int(hostGet(m, 19, 4))
+		if off+n > nhostW {
+			hostGrow(off + n)
+		}
+		copy(hostW[off:nhostW], m[23:23+n])
+		hostReply(tWrite+1, tag)
+		hostPut(uint32(n), 4)
+	case tRemove:
+		fid := hostGet(m, 7, 4)
+		if hostFid[fid] != hostWFile {
+			hostFid[fid] = -1
+			hostErr(tag, "permission denied")
+			break
+		}
+		hostFid[fid] = -1
+		hostWUsed = false
+		hostReply(tRemove+1, tag)
+	case tStat:
+		i := hostFid[hostGet(m, 7, 4)]
+		hostReply(tStat+1, tag)
+		hostPut(49, 2) // nstat, then the stat's size, type, dev and qid
+		hostPut(47, 2)
+		hostPut(0, 2+4+13)
+		mode := uint32(0)
+		if i == -2 {
+			mode = dmDir
+		}
+		hostPut(mode, 4)
+		hostPut(0, 8) // atime, mtime
+		hostPut(uint32(hostLen(i)), 4)
+		hostPut(0, 4)
+		hostPut(0, 8) // name, uid, gid, muid
+	case tWstat:
+		if hostFid[hostGet(m, 7, 4)] != hostWFile {
+			hostErr(tag, "permission denied")
+			break
+		}
+		if l := hostGet(m, 46, 4); l != 0xffffffff {
+			hostGrow(int(l))
+		}
+		if k := int(hostGet(m, 54, 2)); k > 0 {
+			nhostWName = copy(hostWName[:], m[56:56+k])
+		}
+		hostReply(tWstat+1, tag)
 	case tRead:
 		i := hostFid[hostGet(m, 7, 4)]
 		off := int(hostGet(m, 11, 4))
@@ -684,10 +799,19 @@ func hostOpen() int {
 	return n
 }
 
-func TestInclude(t *testing.T) {
+// hostUp makes the host the file server, its fids all free.
+func hostUp() {
 	for i := range hostFid {
 		hostFid[i] = -1
 	}
+	Key = hostKey
+	Avail = hostAvail
+	hostSays = true
+	nineUp = false
+}
+
+func TestInclude(t *testing.T) {
+	hostUp()
 	hostBig[0] = '0'
 	hostBig[1] = '\n'
 	nbig = 2
@@ -700,16 +824,12 @@ func TestInclude(t *testing.T) {
 	hostBig[nbig] = '.'
 	hostBig[nbig+1] = '\n'
 	nbig += 2
-	Key = hostKey
-	Avail = hostAvail
-	hostSays = true
-	nineUp = false
 	check(t, "INCLUDE a.fth ia .", "3 3 ")
 	check(t, "S\" dir/b.fth\" INCLUDED", "3 30 ")
 	check(t, "INCLUDE c.fth", "1 c.fth:2: nosuch ?\n")
 	check(t, "INCLUDE d.fth .", "8 -1 7 -1 ")
 	check(t, "INCLUDE nofile.fth", "nofile.fth: file does not exist\n")
-	check(t, "INCLUDE big.fth", "998 ")
+	check(t, "INCLUDE big.fth", "398 ")
 	check(t, "S\" e.txt\" R/O OPEN-FILE . VALUE fe", "0 ")
 	check(t, "PAD 80 fe READ-LINE . . PAD SWAP TYPE", "0 -1 one")
 	check(t, "PAD 80 fe READ-LINE . . PAD SWAP TYPE", "0 -1 two")
@@ -746,6 +866,52 @@ func TestInclude(t *testing.T) {
 	nineWait = 20
 	check(t, "INCLUDE a.fth", "a.fth: no file server: load with ogo loadp2 -9 DIR\n")
 	nineWait = 3000
+	Key = nil
+	Avail = nil
+}
+
+// hostHas checks what the host's file that can be written holds.
+func hostHas(t *testing.T, want string) {
+	if !same(hostW[:nhostW], want) {
+		printf("host's file: got \"")
+		show(hostW[:nhostW])
+		printf("\", want \"%s\"\n", want)
+		t.Fail()
+	}
+}
+
+func TestFile(t *testing.T) {
+	hostUp()
+	check(t, "S\" w.txt\" W/O CREATE-FILE . VALUE fw", "0 ")
+	check(t, "S\" hello\" fw WRITE-LINE . S\" world\" fw WRITE-FILE . fw FILE-POSITION . . .", "0 0 0 0 11 ")
+	check(t, "fw CLOSE-FILE .", "0 ")
+	hostHas(t, "hello\nworld")
+	check(t, "S\" w.txt\" R/O OPEN-FILE . VALUE fr PAD 80 fr READ-LINE . . PAD SWAP TYPE", "0 0 -1 hello")
+	check(t, "fr FILE-SIZE . . . S\" x\" fr WRITE-FILE . fr CLOSE-FILE .", "0 0 11 -37 0 ")
+	check(t, "S\" w.txt\" R/W OPEN-FILE . VALUE fb 6 0 fb REPOSITION-FILE . S\" W\" fb WRITE-FILE . 0 0 fb REPOSITION-FILE . PAD 80 fb READ-FILE . PAD SWAP TYPE", "0 0 0 0 0 hello\nWorld")
+	check(t, "5 0 fb RESIZE-FILE . fb FILE-SIZE . . . fb FILE-POSITION . . . fb CLOSE-FILE .", "0 0 0 5 0 0 11 0 ")
+	hostHas(t, "hello")
+	// CREATE-FILE empties a file that is there.
+	check(t, "S\" w.txt\" R/W CREATE-FILE . VALUE fc S\" ab\" fc WRITE-FILE . fc FILE-SIZE . . . fc CLOSE-FILE .", "0 0 0 0 2 0 ")
+	hostHas(t, "ab")
+	check(t, "S\" w.txt\" S\" v.txt\" RENAME-FILE . S\" w.txt\" FILE-STATUS NIP . S\" v.txt\" FILE-STATUS NIP .", "0 -38 0 ")
+	check(t, "S\" v.txt\" DELETE-FILE . S\" v.txt\" DELETE-FILE 0= . S\" a.fth\" DELETE-FILE 0= .", "0 0 0 ")
+	check(t, "S\" \" DELETE-FILE 0= . S\" dir/..\" DELETE-FILE 0= . S\" dir/b.fth\" S\" b.fth\" RENAME-FILE 0= .", "0 0 0 ")
+	// More than a buffer holds, and more than a message.
+	check(t, "CREATE wbig 600 ALLOT wbig 600 CHAR x FILL S\" w.txt\" W/O CREATE-FILE . VALUE fd wbig 600 fd WRITE-FILE . fd CLOSE-FILE .", "0 0 0 ")
+	if nhostW != 600 || hostW[0] != 'x' || hostW[599] != 'x' {
+		printf("host's file: %d bytes\n", nhostW)
+		t.Fail()
+	}
+	check(t, "S\" w.txt\" DELETE-FILE .", "0 ")
+	check(t, "0 S\" r.fth\" REQUIRED REQUIRE r.fth INCLUDE r.fth .", "2 ")
+	check(t, "INCLUDE s.fth", "0 11 ")
+	check(t, "S\" ab\" S\" cd\" TYPE TYPE", "cdab")
+	check(t, "S\" abcdef\" 2 /STRING TYPE S\" xy\" 0 /STRING TYPE", "cdefxy")
+	if n := hostOpen(); n != 0 {
+		printf("%d files left open on the host\n", n)
+		t.Fail()
+	}
 	Key = nil
 	Avail = nil
 }

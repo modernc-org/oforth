@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty tests by M4); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-one tests by M4); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -54,8 +54,9 @@ REP for a DO loop in cog RAM with no branch in its body, 2026-10-29: the
 empty loop 2 clocks an iteration, against 8, Ertl's matrix
 multiplication 224 ms to 208; then INCLUDE, 2026-10-29, reading the
 host's files by 9P over the serial line, which the loader serves (`ogo
-loadp2 -t -9 DIR`), with the read-only FILE words over the same layer.
-Next: writing files over 9P, and the SD card behind the same layer when
+loadp2 -t -9 DIR`), with the read-only FILE words over the same layer;
+then the whole FILE word set, writing too, the same day, the suite's
+`filetest.fth` passing. Next: the SD card behind the same layer when
 a card is back. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
@@ -276,7 +277,9 @@ All measured or read in this session and recorded with their sources in
   cases, which `TestEncoder` holds the compiler to.
 - **`forth/`**: `space.ogo` the code space (P2 instructions) and the data
   space (HERE, BASE and STATE in its first cells), apart, both hub RAM, an
-  address being a hub address; `dict.ogo` the headers, names and a hash
+  address being a hub address, both arrays of the program's that `Init`
+  is given (`main.ogo`'s 128 KB and 160 KB, the tests' 64 KB each, the
+  test binary having to hold the tests); `dict.ogo` the headers, names and a hash
   table of chains, case-insensitive; `compile.ogo` the template loader, the
   emitters, the pending literal that the next primitive folds, calls, and
   the control-flow stack; `interp.ogo` input, numbers, `exec` (run, serve
@@ -288,9 +291,17 @@ All measured or read in this session and recorded with their sources in
   file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
   `nine.ogo` the 9P client under it.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
-  each read through a buffer of 512 bytes by `fileByte`, the layer the SD
-  card is to come behind (`fileOpen`, `fileByte`, `fileClose`); a fileid
-  is the place plus one. The 9P client sends a message after $FF $01, which
+  each through a buffer of 512 bytes holding what was read or what was
+  written and not yet sent (`dirty`), `off` where in the file it starts
+  and `pos` where the file is, the layer the SD card is to come behind
+  (`fileOpen`, `fileByte`, `fileWrite`, `fileSeek`, `fileFlush`,
+  `fileClose`, `fileSize`, ...); a fileid is the place plus one, its 9P
+  fid the place plus two, and `nineTemp` the fid of DELETE-FILE's,
+  RENAME-FILE's and FILE-STATUS's walks. R/O, W/O and R/W are 9P's modes;
+  CREATE-FILE creates (`Tcreate` makes no file that is there) or opens
+  with OTRUNC; RENAME-FILE is a `Twstat` of the name, so within a
+  directory only, and DELETE-FILE and RENAME-FILE refuse a name with no
+  part or a `.` or `..` part, lest they reach the directory served. The 9P client sends a message after $FF $01, which
   tells the loader one follows, and finds the reply among what the
   console brings by its first seven bytes (size, type, tag: the size's two
   zero bytes no text has), the bytes before them being typed input, which
@@ -299,8 +310,12 @@ All measured or read in this session and recorded with their sources in
   with a version again. `includeFile` keeps a line buffer for each of
   eight levels, SOURCE-ID the fileid, REFILL and `(` reading on in the
   file (`inFile`, `refillFile`), and an error is written after `where`'s
-  "name:line: ". `TestInclude` serves the client from a 9P server of its
-  own in the test, through `Key` and `Avail`.
+  "name:line: ". SAVE-INPUT of a file keeps where its line starts and
+  the line's number, which RESTORE-INPUT seeks back to; INCLUDED keeps the
+  names in `inclNames` for REQUIRED, which MARKER takes back.
+  `TestInclude` and `TestFile` serve the client from a 9P server of
+  their own in the test, through `Key` and `Avail`, one file of which can
+  be written.
 - **The input source** is `src`, a slice over `tib` or over what EVALUATE
   was given, `srcAddr` where it is, and `>IN` a data-space cell
   (`cellToIn`); `parse`, `parseName` and `skip` read it. EVALUATE saves and
@@ -384,7 +399,7 @@ flock -w 900 /tmp/p2-board.lock ogo test ./forth # the tests, on the board, seco
 flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
-scripts/f2012.sh                # the Forth-2012 CORE and CORE EXT tests on the board, INCLUDEd by 9P, half a minute; errors: 0
+scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT and FILE tests on the board, INCLUDEd by 9P, half a minute; errors: 0
 ogo loadp2 -t -9 . -b 230400 oforth.binary       # the REPL with INCLUDE serving this directory (under the lock)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes

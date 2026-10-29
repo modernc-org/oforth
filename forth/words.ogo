@@ -130,6 +130,19 @@ const (
 	oReadFile
 	oReadLine
 	oBin
+	oCreateFile
+	oWriteFile
+	oWriteLine
+	oFlushFile
+	oFilePosition
+	oFileSize
+	oRepositionFile
+	oResizeFile
+	oDeleteFile
+	oRenameFile
+	oFileStatus
+	oRequired
+	oRequire
 )
 
 // Words the compiler compiles where it makes something of its own.
@@ -272,7 +285,22 @@ func octoWords() {
 	octoWord("READ-FILE", oReadFile, 0)
 	octoWord("READ-LINE", oReadLine, 0)
 	octoWord("BIN", oBin, 0)
-	constWord("R/O", 0)
+	octoWord("CREATE-FILE", oCreateFile, 0)
+	octoWord("WRITE-FILE", oWriteFile, 0)
+	octoWord("WRITE-LINE", oWriteLine, 0)
+	octoWord("FLUSH-FILE", oFlushFile, 0)
+	octoWord("FILE-POSITION", oFilePosition, 0)
+	octoWord("FILE-SIZE", oFileSize, 0)
+	octoWord("REPOSITION-FILE", oRepositionFile, 0)
+	octoWord("RESIZE-FILE", oResizeFile, 0)
+	octoWord("DELETE-FILE", oDeleteFile, 0)
+	octoWord("RENAME-FILE", oRenameFile, 0)
+	octoWord("FILE-STATUS", oFileStatus, 0)
+	octoWord("REQUIRED", oRequired, 0)
+	octoWord("REQUIRE", oRequire, 0)
+	constWord("R/O", famRO)
+	constWord("W/O", famWO)
+	constWord("R/W", famRW)
 	constWord("BASE", dataBase()+cellBase*4)
 	constWord("STATE", dataBase()+cellState*4)
 	constWord(">IN", dataBase()+cellToIn*4)
@@ -292,9 +320,12 @@ func findStr(s string) int {
 	return w
 }
 
-// Init makes the system: the templates' words, OctoGo's, and the empty
-// stacks. It is called once.
-func Init() {
+// Init makes the system in the code and data spaces given, which it keeps:
+// the templates' words, OctoGo's, and the empty stacks. It is called once.
+// The data space must have room for the system's cells, dataFirst bytes.
+func Init(codeSpace, dataSpace []uint32) {
+	code = codeSpace
+	data = dataSpace
 	for i := range bucket {
 		bucket[i] = -1
 	}
@@ -412,7 +443,18 @@ func stringHere(s []byte) uint32 {
 	return a
 }
 
-var sbuf [256]byte // where an interpreted S" leaves its string
+// Where an interpreted S" or S\" leaves its string, the two buffers taking
+// turns, so that the string before is still there.
+var (
+	sbuf  [2][256]byte
+	nsbuf int
+)
+
+// sbufNext answers the buffer of the next interpreted string.
+func sbufNext() []byte {
+	nsbuf ^= 1
+	return sbuf[nsbuf][:]
+}
 
 func d2(hi, lo uint32) int64 { return int64(uint64(hi)<<32 | uint64(lo)) }
 
@@ -443,12 +485,15 @@ func needs(id int) int {
 		return 2
 	case oRestoreInput:
 		return 5
-	case oIncluded:
+	case oIncluded, oRequired, oDeleteFile, oFileStatus:
 		return 2
-	case oIncludeFile, oCloseFile, oBin:
+	case oIncludeFile, oCloseFile, oBin, oFlushFile, oFilePosition, oFileSize:
 		return 1
-	case oOpenFile, oReadFile, oReadLine:
+	case oOpenFile, oReadFile, oReadLine, oCreateFile, oWriteFile, oWriteLine,
+		oRepositionFile, oResizeFile:
 		return 3
+	case oRenameFile:
+		return 4
 	}
 	return 0
 }
@@ -616,8 +661,9 @@ func octo(id int) {
 			compileLit(uint32(len(s)))
 			return
 		}
-		n := copy(sbuf[:], s)
-		push(uint32(uintptr(unsafe.Pointer(&sbuf[0]))))
+		b := sbufNext()
+		n := copy(b, s)
+		push(uint32(uintptr(unsafe.Pointer(&b[0]))))
 		push(uint32(n))
 	case oChar:
 		s := nameOrAbort()
@@ -1049,7 +1095,7 @@ func octo2(id int) {
 		}
 		setNth(0, x)
 	case oUnused:
-		push(dataLongs*4 - dpOff())
+		push(uint32(len(data))*4 - dpOff())
 	case oBuffer:
 		n := pop()
 		s := nameOrAbort()
@@ -1094,6 +1140,7 @@ func octo2(id int) {
 		marks[m].nwords = int32(nwords)
 		marks[m].cp = int32(cp)
 		marks[m].dp = dpOff()
+		marks[m].nincl = int32(ninclNames)
 		nmarks++
 		w := define(s, kMarker, 0)
 		if w < 0 {
@@ -1109,8 +1156,14 @@ func octo2(id int) {
 	case oMarkerRT:
 		backTo(int(pop()))
 	case oSaveInput:
-		push(srcAddr)
-		push(uint32(len(src)))
+		// Of a file, where its line starts and the line's number; of
+		// another source, where it is and how long.
+		a, n := srcAddr, uint32(len(src))
+		if k := inFile(); k >= 0 {
+			a, n = saveFile(k)
+		}
+		push(a)
+		push(n)
 		push(uint32(toIn()))
 		push(sourceID)
 		push(4)
@@ -1123,6 +1176,15 @@ func octo2(id int) {
 		in := pop()
 		n := pop()
 		a := pop()
+		if k := inFile(); k >= 0 && id == sourceID {
+			if !restoreFile(k, a, n) {
+				push(0xffffffff)
+				return
+			}
+			setToIn(int(in))
+			push(0)
+			return
+		}
 		if a != srcAddr || n != uint32(len(src)) || id != sourceID {
 			push(0xffffffff)
 			return
@@ -1152,8 +1214,9 @@ func octo2(id int) {
 			compileLit(uint32(n))
 			return
 		}
-		copy(sbuf[:], escBuf[:n])
-		push(uint32(uintptr(unsafe.Pointer(&sbuf[0]))))
+		b := sbufNext()
+		copy(b, escBuf[:n])
+		push(uint32(uintptr(unsafe.Pointer(&b[0]))))
 		push(uint32(n))
 	default:
 		octoFile(id)
@@ -1165,6 +1228,7 @@ type mark struct {
 	nwords int32
 	cp     int32
 	dp     uint32
+	nincl  int32 // the names INCLUDED, for REQUIRED
 }
 
 var (
@@ -1184,6 +1248,7 @@ func backTo(m int) {
 	}
 	cp = int(marks[m].cp)
 	setDpOff(marks[m].dp)
+	ninclNames = int(marks[m].nincl)
 	nmarks = m
 }
 

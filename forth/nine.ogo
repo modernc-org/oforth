@@ -25,13 +25,25 @@ const (
 	nineMsize = 536 // a message's most, a read of 512 bytes and its header
 	nineRoot  = 1   // the fid of the directory served; a file's is 2 and up
 
+	nineTemp = 10 // the fid of a file that is not kept open
+
 	tVersion = 100
 	tAttach  = 104
 	rError   = 107
 	tWalk    = 110
 	tOpen    = 112
+	tCreate  = 114
 	tRead    = 116
+	tWrite   = 118
 	tClunk   = 120
+	tRemove  = 122
+	tStat    = 124
+	tWstat   = 126
+
+	oTrunc = 0x10 // what an open's mode adds to empty the file
+
+	statMode   = 30 // where an Rstat has the file's mode
+	statLength = 42 // and its length
 )
 
 var (
@@ -205,14 +217,18 @@ func nineStart() bool {
 	return true
 }
 
-// nineOpen walks fid from the root to the file name, its parts parted by
-// slashes, and opens it for reading.
-func nineOpen(fid uint32, name []byte) bool {
+// nineWalk walks fid from the directory fid from to the file name, its
+// parts parted by slashes, from being the root when it is 0; an empty name
+// makes fid stand for what from does.
+func nineWalk(from, fid uint32, name []byte) bool {
 	if !nineStart() {
 		return false
 	}
+	if from == 0 {
+		from = nineRoot
+	}
 	at := header(tWalk)
-	at = put4(at, nineRoot)
+	at = put4(at, from)
 	at = put4(at, fid)
 	nat := at
 	at += 2
@@ -245,14 +261,56 @@ func nineOpen(fid uint32, name []byte) bool {
 		setNineErr("file does not exist")
 		return false
 	}
-	at = header(tOpen)
+	return true
+}
+
+// nineOpen opens fid, walked to a file, in mode, clunking it if that
+// fails.
+func nineOpen(fid uint32, mode uint32) bool {
+	at := header(tOpen)
 	at = put4(at, fid)
-	at = put1(at, 0) // OREAD
+	at = put1(at, mode)
 	if !rpc(at) {
 		nineClunk(fid)
 		return false
 	}
 	return true
+}
+
+// nineCreate makes fid stand for the file name opened in mode, created,
+// or emptied if it was there.
+func nineCreate(fid uint32, name []byte, mode uint32) bool {
+	k := len(name) - 1
+	for k >= 0 && name[k] != '/' {
+		k--
+	}
+	if k == len(name)-1 {
+		setNineErr("not a file name")
+		return false
+	}
+	if !nineWalk(0, fid, name[:k+1]) {
+		return false
+	}
+	at := header(tCreate)
+	at = put4(at, fid)
+	at = putStr(at, name[k+1:])
+	if at < 0 {
+		nineClunk(fid)
+		setNineErr("the name is too long")
+		return false
+	}
+	at = put4(at, 0666)
+	at = put1(at, mode)
+	if rpc(at) {
+		return true
+	}
+	// The server creates no file that is there; fid is still the
+	// directory, to walk on from.
+	if !nineWalk(fid, fid, name[k+1:]) {
+		nineClunk(fid)
+		return false
+	}
+	return nineOpen(fid, mode|oTrunc)
 }
 
 // nineRead reads into p what the file fid has from off on, at most a
@@ -275,6 +333,69 @@ func nineRead(fid, off uint32, p []byte) int {
 		c = n
 	}
 	return copy(p[:c], nine[11:11+c])
+}
+
+// nineWrite writes p to the file fid at off, at most a message's worth,
+// and answers how much, or -1 on an error.
+func nineWrite(fid, off uint32, p []byte) int {
+	n := len(p)
+	if n > nineMax-23 {
+		n = nineMax - 23
+	}
+	at := header(tWrite)
+	at = put4(at, fid)
+	at = put4(at, off)
+	at = put4(at, 0) // the offset's high half
+	at = put4(at, uint32(n))
+	at += copy(nine[at:], p[:n])
+	if !rpc(at) {
+		return -1
+	}
+	return int(get4(7))
+}
+
+// nineStat asks the host for fid's stat, which the reply in nine has its
+// mode at statMode and its length at statLength.
+func nineStat(fid uint32) bool {
+	at := header(tStat)
+	at = put4(at, fid)
+	return rpc(at)
+}
+
+// nineWstat changes the length of fid's file when length is not ^0, and
+// its name when name is not empty.
+func nineWstat(fid uint32, length uint32, name []byte) bool {
+	at := header(tWstat)
+	at = put4(at, fid)
+	nat := at
+	at += 4 // nstat, and the stat's own size
+	for i := 0; i < 2+4+13+4+4+4; i++ {
+		at = put1(at, 0xff) // type, dev, qid, mode, atime, mtime: as they are
+	}
+	at = put4(at, length)
+	h := uint32(0)
+	if length == 0xffffffff {
+		h = 0xffffffff
+	}
+	at = put4(at, h)
+	at = putStr(at, name)
+	if at < 0 {
+		setNineErr("the name is too long")
+		return false
+	}
+	at = putStr(at, nil) // uid, gid, muid: as they are
+	at = putStr(at, nil)
+	at = putStr(at, nil)
+	put2(nat, uint32(at-nat-2))
+	put2(nat+2, uint32(at-nat-4))
+	return rpc(at)
+}
+
+// nineRemove removes the file fid stands for, which the host forgets.
+func nineRemove(fid uint32) bool {
+	at := header(tRemove)
+	at = put4(at, fid)
+	return rpc(at)
 }
 
 // nineClunk lets the host forget fid.

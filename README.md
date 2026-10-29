@@ -18,18 +18,18 @@ It is the third program of size in OctoGo, after
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
 **Status, 2026-10-29: milestone M2 done, M4 begun.** A REPL on the serial
-line compiles every colon definition to P2 machine code: 80 primitives
+line compiles every colon definition to P2 machine code: 81 primitives
 copied in as P2 instructions, literals folded into the instructions that
 use them, small words inlined, a call in tail position made a jump, a loop
 without calls run from cog RAM, a DO loop there with no branch in its body
 repeated by REP, calls with the return address in a register
-and the return stack in LUT RAM, and 117 words written in OctoGo that
-compiled code calls back into. `INCLUDE` reads source from the host's
-files, over the serial line. It passes
-the CORE and CORE EXT tests of the Forth-2012 test suite on the board, with
-0 errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
+and the return stack in LUT RAM, and 130 words written in OctoGo that
+compiled code calls back into. `INCLUDE` and the FILE words read and
+write the host's files, over the serial line. It passes the CORE, CORE
+EXT and FILE tests of the Forth-2012 test suite on the board, with 0
+errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
 word's machine code as the words it was compiled from. There is no
-writing to files yet, no FLOATING, no
+FLOATING, no
 multitasking within a cog, and nothing protects a word that jumps into
 garbage: it takes the REPL down with it. The research and the decisions
 behind it are in [ASSESSMENT.md](ASSESSMENT.md).
@@ -69,10 +69,15 @@ ogo loadp2 -t -9 . -b 230400 oforth.binary
 INCLUDE bench/oforth.fth
 ```
 
-`INCLUDED`, `INCLUDE-FILE`, `OPEN-FILE`, `READ-LINE`, `READ-FILE`,
-`CLOSE-FILE`, `R/O` and `BIN` read files so too. A name is a path in the
-directory served; an error in a file is reported with its name and the
-line's number, and a `(` comment in a file may go on over lines. Under a
+The FILE word set reads and writes files so too: `INCLUDED`,
+`INCLUDE-FILE`, `REQUIRE`, `REQUIRED`, `OPEN-FILE`, `CREATE-FILE`,
+`READ-LINE`, `READ-FILE`, `WRITE-LINE`, `WRITE-FILE`, `FILE-POSITION`,
+`REPOSITION-FILE`, `FILE-SIZE`, `RESIZE-FILE`, `FLUSH-FILE`,
+`RENAME-FILE`, `DELETE-FILE`, `FILE-STATUS`, `CLOSE-FILE`, `R/O`, `W/O`,
+`R/W` and `BIN`. A name is a path in the directory served; `RENAME-FILE`
+renames a file within its directory only, as 9P does. An error in a file
+is reported with its name and the line's number, and a `(` comment in a
+file may go on over lines. Under a
 loader with no `-9`, such as `ogo run`'s, INCLUDE gives up after three
 seconds, saying so, the bytes of its request showing on the terminal.
 

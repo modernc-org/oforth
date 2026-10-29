@@ -18,6 +18,13 @@ import (
 // ringN must be a power of two.
 const ringN = 4096
 
+// The Forth's code and data spaces, the room a Forth program has: 128 KB
+// and 160 KB.
+var (
+	code [32768]uint32
+	data [40960]uint32
+)
+
 var (
 	ring [ringN]byte
 	head int // written by the reader only
@@ -46,7 +53,7 @@ func main() {
 	forth.Console = true
 	forth.Key = key
 	forth.Avail = avail
-	forth.Init()
+	forth.Init(code[:], data[:])
 	forth.Banner()
 	forth.Quit()
 }

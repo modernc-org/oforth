@@ -3,8 +3,8 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-# f2012.sh runs the Forth-2012 test suite's tests of the CORE and CORE EXT
-# word sets (Gerry Jackson's suite, after John Hayes' tests) on the board:
+# f2012.sh runs the Forth-2012 test suite's tests of the CORE, CORE EXT and
+# FILE word sets (Gerry Jackson's suite, after John Hayes' tests) on the board:
 # the REPL INCLUDEs the suite's files from build/f2012, which the loader
 # serves by 9P, and the script prints what failed and the tester's count of
 # errors, which must be 0. The suite is fetched at a pinned commit into
@@ -29,24 +29,29 @@ done <<'SUMS'
 d967d1d367b3c0bf91b13944694fb5ac26fa793a63be3ea58bf50779971ef47b coreplustest.fth
 69b362b974f2ecebb0dbea1d77281dcca7b112107d7ad7b3e7f764a40c1c83a7 utilities.fth
 f35b9a78ac463985e2cfa616f19893204e25f5a51f0512324d8d45fe9e73b71b coreexttest.fth
+569584cc70dd5eeee74af1911df1697770417185f6c9f7494bbc06005c76fb2e filetest.fth
+b09d273fb8a8afa1438c6f8bc0a43a66e02a171d6f9e0d413c8777c58e126ba3 required-helper1.fth
+b09d273fb8a8afa1438c6f8bc0a43a66e02a171d6f9e0d413c8777c58e126ba3 required-helper2.fth
 SUMS
 ogo build -o $dir/oforth.binary .
 # Each file is INCLUDEd by a line of its own, so that an error stops only
 # that file, core.fr's test of ACCEPT taking the line after its own; the
 # lines are all sent at once, and the loader is left when the count of
-# errors has come.
+# errors has come. filetest.fth writes its files into build/f2012 and
+# deletes them.
 rm -f $dir/raw.txt
 flock -o -w 900 /tmp/p2-board.lock sh -c "
 	for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done
 	fuser -s $port && { echo 'port busy'; exit 1; }
 	(sleep 4
 	printf 'INCLUDE tester.fr\\rINCLUDE core.fr\\rtyped for ACCEPT\\r'
-	for f in coreplustest.fth utilities.fth coreexttest.fth; do printf 'INCLUDE %s\\r' \$f; done
+	for f in coreplustest.fth utilities.fth coreexttest.fth filetest.fth; do printf 'INCLUDE %s\\r' \$f; done
 	printf 'DECIMAL CR .( errors: ) #ERRORS @ .\\r'
 	for i in \$(seq 240); do grep -q -a 'errors: [0-9]' $dir/raw.txt 2>/dev/null && break; sleep 0.5; done
 	sleep 1; printf '\\035') |
 		timeout 180 ogo loadp2 -t -NOEOF -9 $dir -p $port -b 230400 $dir/oforth.binary > $dir/raw.txt"
 tr -d '\r' < $dir/raw.txt > $dir/out.txt
-# CORE-EXT-ERRORS is the suite's errorreport.fth's, which is not loaded.
+# CORE-EXT-ERRORS and FILE-ERRORS are the suite's errorreport.fth's, which
+# is not loaded.
 grep -a 'errors:\|INCORRECT RESULT: T\|WRONG NUMBER OF RESULTS: T\| ?$\|error:\|: No such' $dir/out.txt |
-	grep -a -v 'CORE-EXT-ERRORS ?$'
+	grep -a -v 'CORE-EXT-ERRORS ?$\|FILE-ERRORS ?$'

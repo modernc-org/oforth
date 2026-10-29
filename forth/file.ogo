@@ -6,27 +6,35 @@ import (
 	"unsafe"
 )
 
-// Files, which INCLUDE and the FILE words read: a table of the open ones,
-// each read through a buffer of its own from where it lives. That is the
-// host's directory over 9P for now (nine.ogo); the SD card is to come
-// behind the same functions, fileOpen, fileByte and fileClose. A file's
-// fileid is its place in the table plus one, so that none is 0, the
-// console's SOURCE-ID, or -1, EVALUATE's.
+// Files, which INCLUDE and the FILE words read and write: a table of the
+// open ones, each through a buffer of its own, which holds what was read
+// or what is written and not yet sent. They are in the host's directory
+// over 9P for now (nine.ogo); the SD card is to come behind the same
+// functions, fileOpen, fileByte, fileWrite, fileSeek and the rest. A
+// file's fileid is its place in the table plus one, so that none is 0,
+// the console's SOURCE-ID, or -1, EVALUATE's.
 
 const (
 	maxFiles = 8
 	fileBufN = 512
 	maxName  = 64
 
-	famBin    = 4          // what BIN adds to R/O, which is 0
+	famRO     = 0          // R/O, W/O and R/W are 9P's modes
+	famWO     = 1          //
+	famRW     = 2          //
+	famBin    = 4          // what BIN adds, which changes nothing
 	iorIO     = 0xffffffdb // ANS's codes: -37, a file's I/O failed
 	iorNoFile = 0xffffffda // and -38, no such file
+
+	dmDir = 0x80000000 // a 9P mode's bit of a directory
 )
 
 type file struct {
 	open   bool
-	off    uint32 // where in the file the next read of buf starts
-	pos, n int    // buf[pos:n] is what was read and not yet taken
+	dirty  bool   // buf[:n] was written and is not on the host yet
+	mode   uint32 // famRO, famWO or famRW
+	off    uint32 // where in the file buf starts
+	pos, n int    // buf[:n] is the file from off on, pos where in it
 	buf    [fileBufN]byte
 	name   [maxName]byte // for an error's message
 	nname  int
@@ -45,60 +53,105 @@ func fileOf(id uint32) (int, bool) {
 	return f, true
 }
 
-// fileOpen opens the file name for reading and answers it, or -1, what
-// went wrong being in nineErr.
-func fileOpen(name []byte) int {
+// fileOpen opens the file name in mode, creating it or emptying it first
+// when create is set, and answers it, or -1, what went wrong being in
+// nineErr.
+func fileOpen(name []byte, mode uint32, create bool) int {
 	for f := 0; f < maxFiles; f++ {
-		if files[f].open {
+		fl := &files[f]
+		if fl.open {
 			continue
 		}
-		if !nineOpen(fidOf(f), name) {
+		ok := false
+		if create {
+			ok = nineCreate(fidOf(f), name, mode)
+		} else {
+			ok = nineWalk(0, fidOf(f), name) && nineOpen(fidOf(f), mode)
+		}
+		if !ok {
 			return -1
 		}
-		files[f].open = true
-		files[f].off = 0
-		files[f].pos = 0
-		files[f].n = 0
-		files[f].nname = copy(files[f].name[:], name)
+		fl.open = true
+		fl.dirty = false
+		fl.mode = mode
+		fl.off = 0
+		fl.pos = 0
+		fl.n = 0
+		fl.nname = copy(fl.name[:], name)
 		return f
 	}
 	setNineErr("too many open files")
 	return -1
 }
 
-func fileClose(f int) {
-	if files[f].open {
-		files[f].open = false
-		nineClunk(fidOf(f))
+// fileClose closes f, and answers whether what was written to it got to
+// the host.
+func fileClose(f int) bool {
+	fl := &files[f]
+	if !fl.open {
+		return true
 	}
+	ok := fileFlush(f)
+	fl.open = false
+	nineClunk(fidOf(f))
+	return ok
+}
+
+// fileFlush sends what was written to f to the host. What could not be
+// sent is lost.
+func fileFlush(f int) bool {
+	fl := &files[f]
+	if !fl.dirty {
+		return true
+	}
+	fl.dirty = false
+	ok := true
+	for at := 0; at < fl.n; {
+		k := nineWrite(fidOf(f), fl.off+uint32(at), fl.buf[at:fl.n])
+		if k <= 0 {
+			ok = false
+			break
+		}
+		at += k
+	}
+	fl.off += uint32(fl.n)
+	fl.pos = 0
+	fl.n = 0
+	return ok
 }
 
 // fileByte answers the next byte of f, -1 at its end and -2 on an error.
 // Right after a byte, files[f].pos-- gives it back.
 func fileByte(f int) int {
-	if files[f].pos == files[f].n {
-		k := nineRead(fidOf(f), files[f].off, files[f].buf[:])
+	fl := &files[f]
+	if fl.pos == fl.n {
+		if !fileFlush(f) {
+			return -2
+		}
+		fl.off += uint32(fl.n)
+		fl.pos = 0
+		fl.n = 0
+		k := nineRead(fidOf(f), fl.off, fl.buf[:])
 		if k < 0 {
 			return -2
 		}
 		if k == 0 {
 			return -1
 		}
-		files[f].off += uint32(k)
-		files[f].pos = 0
-		files[f].n = k
+		fl.n = k
 	}
-	c := files[f].buf[files[f].pos]
-	files[f].pos++
+	c := fl.buf[fl.pos]
+	fl.pos++
 	return int(c)
 }
 
 // fileRead reads into p what f has next, as much as p holds, and answers
 // how much, less only at the end of the file, or -1 on an error.
 func fileRead(f int, p []byte) int {
+	fl := &files[f]
 	n := 0
 	for n < len(p) {
-		if files[f].pos == files[f].n {
+		if fl.pos == fl.n {
 			c := fileByte(f)
 			if c == -1 {
 				break
@@ -110,11 +163,167 @@ func fileRead(f int, p []byte) int {
 			n++
 			continue
 		}
-		k := copy(p[n:], files[f].buf[files[f].pos:files[f].n])
-		files[f].pos += k
+		k := copy(p[n:], fl.buf[fl.pos:fl.n])
+		fl.pos += k
 		n += k
 	}
 	return n
+}
+
+// fileWrite writes p to f where it is, through its buffer.
+func fileWrite(f int, p []byte) bool {
+	fl := &files[f]
+	if fl.mode == famRO {
+		return false
+	}
+	if !fl.dirty {
+		// What was read after where the file is is let go.
+		fl.off += uint32(fl.pos)
+		fl.pos = 0
+		fl.n = 0
+	}
+	for len(p) > 0 {
+		k := copy(fl.buf[fl.n:], p)
+		p = p[k:]
+		fl.n += k
+		fl.pos = fl.n
+		fl.dirty = true
+		if fl.n == fileBufN && !fileFlush(f) {
+			return false
+		}
+	}
+	return true
+}
+
+// filePos answers where in f the next byte is read or written.
+func filePos(f int) uint32 { return files[f].off + uint32(files[f].pos) }
+
+// fileSeek makes to where in f the next byte is read or written.
+func fileSeek(f int, to uint32) bool {
+	fl := &files[f]
+	if !fileFlush(f) {
+		return false
+	}
+	if to >= fl.off && to-fl.off <= uint32(fl.n) {
+		fl.pos = int(to - fl.off)
+		return true
+	}
+	fl.off = to
+	fl.pos = 0
+	fl.n = 0
+	return true
+}
+
+// fileSize answers how long f is.
+func fileSize(f int) (uint32, bool) {
+	if !fileFlush(f) || !nineStat(fidOf(f)) {
+		return 0, false
+	}
+	return get4(statLength), get4(statLength+4) == 0
+}
+
+// fileResize makes f size bytes long, where it is in it staying.
+func fileResize(f int, size uint32) bool {
+	fl := &files[f]
+	if !fileFlush(f) {
+		return false
+	}
+	fl.off += uint32(fl.pos)
+	fl.pos = 0
+	fl.n = 0
+	return nineWstat(fidOf(f), size, nil)
+}
+
+// lastSlash answers where the last slash of name is, -1 if it has none.
+func lastSlash(name []byte) int {
+	k := len(name) - 1
+	for k >= 0 && name[k] != '/' {
+		k--
+	}
+	return k
+}
+
+// plainName answers whether name names a file below the directory served,
+// so that what is removed or renamed by it is never that directory.
+func plainName(name []byte) bool {
+	parts := 0
+	for i := 0; i < len(name); {
+		j := i
+		for j < len(name) && name[j] != '/' {
+			j++
+		}
+		p := name[i:j]
+		if len(p) == 1 && p[0] == '.' || len(p) == 2 && p[0] == '.' && p[1] == '.' {
+			return false
+		}
+		if len(p) > 0 {
+			parts++
+		}
+		i = j + 1
+	}
+	if parts == 0 {
+		setNineErr("a file name is missing")
+		return false
+	}
+	return true
+}
+
+// fileStatus answers the 9P mode of the file name, if there is one.
+func fileStatus(name []byte) (uint32, bool) {
+	if !nineWalk(0, nineTemp, name) {
+		return 0, false
+	}
+	ok := nineStat(nineTemp)
+	m := get4(statMode)
+	nineClunk(nineTemp)
+	return m, ok
+}
+
+// fileDelete removes the file name, which is to be no directory.
+func fileDelete(name []byte) bool {
+	if !plainName(name) {
+		return false
+	}
+	m, ok := fileStatus(name)
+	if !ok {
+		return false
+	}
+	if m&dmDir != 0 {
+		setNineErr("a directory")
+		return false
+	}
+	return nineWalk(0, nineTemp, name) && nineRemove(nineTemp)
+}
+
+// fileRename renames the file from to; 9P renames a file within its
+// directory only.
+func fileRename(from, to []byte) bool {
+	if !plainName(from) || !plainName(to) {
+		return false
+	}
+	i, j := lastSlash(from), lastSlash(to)
+	if !bytesEq(from[:i+1], to[:j+1]) {
+		setNineErr("a file stays in its directory")
+		return false
+	}
+	if !nineWalk(0, nineTemp, from) {
+		return false
+	}
+	ok := nineWstat(nineTemp, 0xffffffff, to[j+1:])
+	nineClunk(nineTemp)
+	return ok
+}
+
+func bytesEq(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // How a line fileLine read ended.
@@ -129,6 +338,7 @@ const (
 // it ended. A line ends at LF, CR or CR LF, which are not part of it, and
 // the last one may end at the end of the file.
 func fileLine(f int, p []byte) (int, int) {
+	fl := &files[f]
 	n := 0
 	for {
 		c := fileByte(f)
@@ -145,12 +355,12 @@ func fileLine(f int, p []byte) (int, int) {
 		case c == '\r':
 			d := fileByte(f)
 			if d >= 0 && d != '\n' {
-				files[f].pos--
+				fl.pos--
 			}
 			return n, lineEnd
 		}
 		if n == len(p) {
-			files[f].pos--
+			fl.pos--
 			return n, lineLong
 		}
 		p[n] = byte(c)
@@ -164,26 +374,58 @@ func memory(a, n uint32) []byte {
 }
 
 // The files being included, the innermost last, each with the line it is
-// at in a buffer of its own: a line must outlast the inclusion of another
-// file from it.
+// at, where in the file that line starts, for SAVE-INPUT, and the line in
+// a buffer of its own: a line must outlast the inclusion of another file
+// from it.
 const maxIncl = 8
 
 var (
-	incl     [maxIncl]struct{ f, line int32 }
+	incl [maxIncl]struct {
+		f, line int32
+		start   uint32
+	}
 	inclLine [maxIncl][256]byte
 	nincl    int
 )
 
-// included opens the file name and interprets it.
-func included(name []byte) {
+// The names of the files INCLUDED, which REQUIRED includes no more: each
+// a byte of its length and the name. A name that does not fit any more is
+// not kept, and is included again.
+var (
+	inclNames  [1024]byte
+	ninclNames int
+)
+
+func wasIncluded(name []byte) bool {
+	for i := 0; i < ninclNames; {
+		n := int(inclNames[i])
+		if bytesEq(inclNames[i+1:i+1+n], name) {
+			return true
+		}
+		i += 1 + n
+	}
+	return false
+}
+
+// included opens the file name and interprets it, and REQUIRED so only
+// if it was not included yet.
+func included(name []byte, required bool) {
 	if len(name) == 0 {
 		abort("a file name is missing")
 		return
 	}
-	f := fileOpen(name)
+	if required && wasIncluded(name) {
+		return
+	}
+	f := fileOpen(name, famRO, false)
 	if f < 0 {
 		abortFile(name)
 		return
+	}
+	if !wasIncluded(name) && len(name) < 256 && ninclNames+1+len(name) <= len(inclNames) {
+		inclNames[ninclNames] = byte(len(name))
+		copy(inclNames[ninclNames+1:], name)
+		ninclNames += 1 + len(name)
 	}
 	includeFile(f)
 }
@@ -218,6 +460,7 @@ func includeFile(f int) {
 // source, and answers false at the end of the file or on an error.
 func refillFile(k int) bool {
 	f := int(incl[k].f)
+	incl[k].start = filePos(f)
 	n, how := fileLine(f, inclLine[k][:])
 	switch how {
 	case lineEOF:
@@ -245,6 +488,24 @@ func inFile() int {
 		return nincl - 1
 	}
 	return -1
+}
+
+// saveFile answers what SAVE-INPUT keeps of the file included that is
+// the input source, the k-th: where its line starts, and the line's
+// number.
+func saveFile(k int) (uint32, uint32) {
+	return incl[k].start, uint32(incl[k].line)
+}
+
+// restoreFile makes the line of the k-th file included that starts at
+// start, and is its line-th, the input source again.
+func restoreFile(k int, start, line uint32) bool {
+	f := int(incl[k].f)
+	if !fileSeek(f, start) {
+		return false
+	}
+	incl[k].line = int32(line) - 1
+	return refillFile(k)
 }
 
 // comment skips a ( comment, which in a file goes on over its lines.
@@ -303,16 +564,26 @@ func flag(b bool) uint32 {
 	return 0
 }
 
+// ior answers the ior of what went well or not.
+func ior(ok bool) uint32 {
+	if ok {
+		return 0
+	}
+	return iorIO
+}
+
+var lf = [...]byte{'\n'} // what WRITE-LINE ends a line with
+
 // octoFile executes the file words.
 func octoFile(id int) {
 	switch id {
-	case oIncluded:
+	case oIncluded, oRequired:
 		n := pop()
-		included(memory(pop(), n))
-	case oInclude:
+		included(memory(pop(), n), id == oRequired)
+	case oInclude, oRequire:
 		s := nameOrAbort()
 		if !aborted {
-			included(s)
+			included(s, id == oRequire)
 		}
 	case oIncludeFile:
 		f, ok := fileOf(pop())
@@ -321,31 +592,28 @@ func octoFile(id int) {
 			return
 		}
 		includeFile(f)
-	case oOpenFile:
-		fam := pop()
+	case oOpenFile, oCreateFile:
+		fam := pop() &^ famBin
 		n := pop()
 		s := memory(pop(), n)
-		if fam&^famBin != 0 {
-			push(0)
-			push(iorIO) // only R/O, for now
-			return
+		f := -1
+		if fam <= famRW {
+			f = fileOpen(s, fam, id == oCreateFile)
 		}
-		f := fileOpen(s)
 		if f < 0 {
 			push(0)
-			push(iorNoFile)
+			if id == oOpenFile {
+				push(iorNoFile)
+			} else {
+				push(iorIO)
+			}
 			return
 		}
 		push(uint32(f + 1))
 		push(0)
 	case oCloseFile:
 		f, ok := fileOf(pop())
-		if !ok {
-			push(iorIO)
-			return
-		}
-		fileClose(f)
-		push(0)
+		push(ior(ok && fileClose(f)))
 	case oReadFile:
 		f, ok := fileOf(pop())
 		n := pop()
@@ -383,6 +651,61 @@ func octoFile(id int) {
 			push(uint32(k))
 			push(flag(true))
 			push(0)
+		}
+	case oWriteFile, oWriteLine:
+		f, ok := fileOf(pop())
+		n := pop()
+		p := memory(pop(), n)
+		ok = ok && fileWrite(f, p)
+		if ok && id == oWriteLine {
+			ok = fileWrite(f, lf[:])
+		}
+		push(ior(ok))
+	case oFlushFile:
+		f, ok := fileOf(pop())
+		push(ior(ok && fileFlush(f)))
+	case oFilePosition, oFileSize:
+		f, ok := fileOf(pop())
+		v := uint32(0)
+		switch {
+		case !ok:
+		case id == oFilePosition:
+			v = filePos(f)
+		default:
+			v, ok = fileSize(f)
+		}
+		push(v)
+		push(0)
+		push(ior(ok))
+	case oRepositionFile, oResizeFile:
+		f, ok := fileOf(pop())
+		hi := pop()
+		lo := pop()
+		switch {
+		case !ok || hi != 0:
+			ok = false
+		case id == oRepositionFile:
+			ok = fileSeek(f, lo)
+		default:
+			ok = fileResize(f, lo)
+		}
+		push(ior(ok))
+	case oDeleteFile:
+		n := pop()
+		push(ior(fileDelete(memory(pop(), n))))
+	case oRenameFile:
+		n := pop()
+		to := memory(pop(), n)
+		n = pop()
+		push(ior(fileRename(memory(pop(), n), to)))
+	case oFileStatus:
+		n := pop()
+		m, ok := fileStatus(memory(pop(), n))
+		push(m)
+		if ok {
+			push(0)
+		} else {
+			push(iorNoFile)
 		}
 	case oBin:
 		push(pop() | famBin)
