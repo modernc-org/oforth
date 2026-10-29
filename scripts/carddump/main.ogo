@@ -1,0 +1,198 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Command carddump sends over the serial line what of the SD card in the
+// slot a check of its FAT32 volume needs, for scripts/cardcheck.sh, which
+// makes an image of it for fsck.fat: the volume's place and size, and every
+// block of its reserved area, its FATs and its directories that is not all
+// zeros. It reads the card only, by the Forth's driver (forth.CardRead),
+// and finds the directories with code of its own, not with the Forth's
+// fat.ogo, which is what it checks.
+//
+// It writes, a line each:
+//
+//	VOL start blocks   where the volume starts on the card, and its size
+//	B n sum hex        block n, the sum of its bytes, and the bytes in hex
+//	END count          how many B lines there were
+//	ERR what           what went wrong instead
+import (
+	"p2"
+
+	"modernc.org/oforth/forth"
+)
+
+const maxDirs = 1024
+
+var (
+	blk  [512]byte
+	fat  [512]byte
+	fatB = uint32(0xffffffff) // the FAT's block that fat holds
+
+	dirs  [maxDirs]uint32 // the first clusters of the directories found
+	ndirs int
+
+	start, fat0, data, shift, clusters uint32
+	sent                               uint32
+
+	hex = "0123456789abcdef"
+)
+
+func le2(i int) uint32 { return uint32(blk[i]) | uint32(blk[i+1])<<8 }
+
+func le4(i int) uint32 { return le2(i) | le2(i+2)<<16 }
+
+func num(v uint32) {
+	var d [10]byte
+	i := len(d)
+	for {
+		i--
+		d[i] = byte('0' + v%10)
+		if v /= 10; v == 0 {
+			break
+		}
+	}
+	for _, c := range d[i:] {
+		p2.WriteByte(c)
+	}
+}
+
+func fail(what string) {
+	println("ERR", what)
+	for {
+	}
+}
+
+func read(n uint32) {
+	if !forth.CardRead(n, blk[:]) {
+		fail("the card could not be read")
+	}
+}
+
+// send reads block n and sends it unless it is all zeros.
+func send(n uint32) {
+	read(n)
+	sum := uint32(0)
+	for _, c := range blk {
+		sum += uint32(c)
+	}
+	if sum == 0 {
+		return
+	}
+	p2.WriteByte('B')
+	p2.WriteByte(' ')
+	num(n)
+	p2.WriteByte(' ')
+	num(sum)
+	p2.WriteByte(' ')
+	for _, c := range blk {
+		p2.WriteByte(hex[c>>4])
+		p2.WriteByte(hex[c&15])
+	}
+	p2.WriteByte('\n')
+	sent++
+}
+
+// boot answers whether blk is a FAT32 volume's first block.
+func boot() bool {
+	return blk[510] == 0x55 && blk[511] == 0xaa && le2(11) == 512 && blk[13] != 0 &&
+		le2(14) != 0 && blk[16] != 0 && le2(17) == 0 && le2(22) == 0 && le4(36) != 0
+}
+
+// next answers the cluster after c in its chain, 0 at its end.
+func next(c uint32) uint32 {
+	if b := fat0 + c/128; b != fatB {
+		read(b)
+		copy(fat[:], blk[:])
+		fatB = b
+	}
+	i := int(c%128) * 4
+	n := (uint32(fat[i]) | uint32(fat[i+1])<<8 | uint32(fat[i+2])<<16 | uint32(fat[i+3])<<24) & 0x0fffffff
+	if n < 2 || n >= clusters {
+		return 0
+	}
+	return n
+}
+
+func found(c uint32) bool {
+	for _, d := range dirs[:ndirs] {
+		if d == c {
+			return true
+		}
+	}
+	return false
+}
+
+func main() {
+	p2.WaitMs(500)
+	read(0)
+	if !boot() {
+		for e := 0x1be; e < 0x1fe; e += 16 {
+			if t := blk[e+4]; t == 0x0b || t == 0x0c {
+				start = le4(e + 8)
+				break
+			}
+		}
+		if start == 0 {
+			fail("no FAT32 partition")
+		}
+		read(start)
+		if !boot() {
+			fail("no FAT32 volume in the partition")
+		}
+	}
+	spc := uint32(blk[13])
+	for 1<<shift != spc {
+		if shift++; shift > 7 {
+			fail("no FAT32 volume")
+		}
+	}
+	res, nf, fatN := le2(14), uint32(blk[16]), le4(36)
+	tot := le2(19)
+	if tot == 0 {
+		tot = le4(32)
+	}
+	fat0 = start + res
+	data = fat0 + nf*fatN
+	clusters = (tot-res-nf*fatN)>>shift + 2
+	dirs[0] = le4(44)
+	ndirs = 1
+	print("VOL ")
+	num(start)
+	p2.WriteByte(' ')
+	num(tot)
+	println()
+
+	// The reserved area and the FATs, then every directory, the ones found
+	// in them too.
+	for b := start; b < data; b++ {
+		send(b)
+	}
+	for k := 0; k < ndirs; k++ {
+		c := dirs[k]
+		for n := uint32(0); c != 0 && n < clusters; n++ {
+			for i := uint32(0); i < spc; i++ {
+				send(data + (c-2)<<shift + i)
+				for e := 0; e < 512; e += 32 {
+					if blk[e] == 0 || blk[e] == 0xe5 || blk[e] == '.' || blk[e+11]&0x3f == 0x0f || blk[e+11]&0x10 == 0 {
+						continue
+					}
+					d := le2(e+20)<<16 | le2(e+26)
+					if d >= 2 && d < clusters && !found(d) {
+						if ndirs == maxDirs {
+							fail("too many directories")
+						}
+						dirs[ndirs] = d
+						ndirs++
+					}
+				}
+			}
+			c = next(c)
+		}
+	}
+	print("END ")
+	num(sent)
+	println()
+	for {
+	}
+}

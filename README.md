@@ -117,7 +117,9 @@ writing again; `RENAME-FILE` renames within a directory, as on the
 host, and no directory is made, the FILE word set having no word for
 it. The board has no clock, so what OctoForth writes is dated
 1980-01-01. The Forth-2012 suite's FILE tests pass on the card too
-(`scripts/f2012.sh -sd`).
+(`scripts/f2012.sh -sd`), and `scripts/cardcheck.sh` checks the card's
+volume with `fsck.fat` from an image of its blocks in use, which a
+program on the board sends; it writes nothing to the card.
 
 ## The P2 words
 

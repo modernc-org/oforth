@@ -109,6 +109,18 @@ func sdOpen() bool {
 	return ok
 }
 
+// CardRead reads block n of the SD card in the slot into p, which is 512
+// bytes, setting the card up first if it is not, and answers whether it
+// could. It is for a program that wants the card's blocks, as
+// scripts/carddump does; one that uses the Forth's files on the card wants
+// none.
+func CardRead(n uint32, p []byte) bool {
+	if len(p) != blockSize || sdBlocks == 0 && !sdOpen() {
+		return false
+	}
+	return sdRead(n, p)
+}
+
 // sdRead reads block b into p, which is blockSize bytes.
 func sdRead(b uint32, p []byte) bool {
 	if b >= sdBlocks {

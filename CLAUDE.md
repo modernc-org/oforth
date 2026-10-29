@@ -52,8 +52,11 @@ as it is (the user's word: OctoForth writes in the card's root and
 leaves that file alone). Every block in use was copied to the host
 before the first write, in a scratch directory, and a FAT32 image built
 of it, which `fsck.fat -n` passed; the card is judged so after every
-change of the FAT code (dump, image, `fsck.fat -n`, `mdir`), there
-being no tool on the board for it. A bug of a first version, the halves
+change of the FAT code, there being no tool on the board for it:
+`scripts/cardcheck.sh` (the user's wish of 2026-10-29) has
+`scripts/carddump` send the volume's reserved area, FATs and
+directories, makes an image of them in `build/card`, and runs
+`fsck.fat -n` and `mdir` on it. A bug of a first version, the halves
 of a first cluster swapped, lost four clusters that night and nothing
 else; the card was mended from the host, `fsck.fat` passing again, and
 `fatLoad` since refuses a cluster that is not one, so that nothing is
@@ -407,7 +410,11 @@ All measured or read in this session and recorded with their sources in
   is still about 20 KB, 27 KB of hub RAM with its data. The pins are
   P58-P61, the flash's too: the card's traffic never gives the flash a
   whole byte (sd.ogo's header comment). `TestCard` runs on the card in
-  the slot, passing with a note when the slot is empty.
+  the slot, passing with a note when the slot is empty. `CardRead`, the
+  one exported function, reads a block, for `scripts/carddump`, whose
+  directory walk is its own and not fat.ogo's, which it checks; the walk
+  of subdirectories has not run, the card having none and the FILE words
+  making none.
 - **The input source** is `src`, a slice over `tib` or over what EVALUATE
   was given, `srcAddr` where it is, and `>IN` a data-space cell
   (`cellToIn`); `parse`, `parseName` and `skip` read it. EVALUATE saves and
@@ -546,6 +553,7 @@ ogo build -o m0.binary ./probe/m0                # the probe
 flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
 scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE and STRING tests on the board, INCLUDEd by 9P, a minute; errors: 0
 scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
+scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes
