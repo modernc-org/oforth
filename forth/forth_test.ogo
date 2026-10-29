@@ -575,6 +575,33 @@ func TestDefine(t *testing.T) {
 	checkHas(t, "SEE ADD-MUL", "ADD-MUL is OctoGo's, trap ")
 }
 
+// TestException holds CATCH and THROW to the EXCEPTION word set: the stacks
+// put back after a THROW, the system's errors given ANS's codes, ABORT"'s
+// message written only when nothing catches it.
+func TestException(t *testing.T) {
+	check(t, ": x1 9 ; : c1 1 2 3 ['] x1 CATCH ; c1 . . . . .", "0 9 3 2 1 ")
+	check(t, ": x2 7 8 9 99 THROW ; : c2 1 2 ['] x2 CATCH ; c2 . . .", "99 2 1 ")
+	check(t, ": x3 1- DUP 0> IF RECURSE ELSE 999 THROW -222 THEN ; : c3 3 4 5 10 ['] x3 CATCH -111 ; c3 . . . . . .", "-111 999 0 5 4 3 ")
+	check(t, "1 2 ' ABORT CATCH . . .", "-1 2 1 ")
+	check(t, ": x4 77 SWAP ABORT\" not shown\" ; 4 5 ' x4 CATCH . . .", "-2 77 4 ")
+	check(t, "0 ' x4 CATCH . .", "0 77 ")
+	check(t, "S\" 1 undefined-word 2\" ' EVALUATE CATCH . DEPTH . 2DROP", "-13 2 ")
+	check(t, "' . CATCH .", "-4 ")
+	check(t, "1 1 0 ' */ CATCH . DEPTH . 2DROP DROP", "-10 3 ")
+	check(t, "0 THROW 5 .", "5 ")
+	// Uncaught, a THROW says so, and ABORT" writes its message.
+	check(t, "42 THROW", "error: uncaught THROW 42\n")
+	check(t, ": x6 ABORT\" boom\" ; 1 x6", "boom\n")
+	// A definition begun inside the CATCH is taken back, and the line goes on.
+	check(t, "S\" : half 1 undefined ;\" ' EVALUATE CATCH . 2DROP 7 .", "-13 7 ")
+	check(t, "' half", "half ?\n")
+	// QUIT is not caught.
+	check(t, ": x7 QUIT ; ' x7 CATCH 5 .", "")
+	// A THROW from a loop leaves the loop around the CATCH as it was.
+	check(t, ": x8 10 0 DO I 3 = IF 5 THROW THEN LOOP ; : c8 0 3 0 DO ['] x8 CATCH + LOOP ; c8 .", "15 ")
+	check(t, ": c9 0 4 0 DO I 2 MOD IF ['] x8 CATCH + ELSE 1+ THEN LOOP ; c9 .", "12 ")
+}
+
 // The host's files for TestInclude and TestFile: a 9P server in the test,
 // which reads the messages the client writes into out, takes them out of
 // it, and answers by Key, as the loader does over the serial line. Its

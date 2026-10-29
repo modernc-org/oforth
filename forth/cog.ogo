@@ -51,8 +51,6 @@ func octoCog(id int) {
 		}
 		push(uint32(cog))
 	default:
-		if !runExported(id) {
-			abort("no such OctoGo word")
-		}
+		octoException(id)
 	}
 }

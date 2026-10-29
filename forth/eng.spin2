@@ -118,6 +118,27 @@ PUB engSetRp(v)
 PUB engGetRp() : r
   r := PR6
 
+' The innermost loop's index and limit, which CATCH keeps.
+PUB engGetLix() : r
+  org
+                mov     r, lix
+  end
+
+PUB engSetLix(v)
+  org
+                mov     lix, v
+  end
+
+PUB engGetLim() : r
+  org
+                mov     r, lim
+  end
+
+PUB engSetLim(v)
+  org
+                mov     lim, v
+  end
+
 PUB engRequest() : r
   r := PR2
 

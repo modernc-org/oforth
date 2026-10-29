@@ -143,6 +143,8 @@ const (
 	oRequired
 	oRequire
 	oRun
+	oCatch
+	oThrow
 
 	// The functions Define makes words, from here on (embed.ogo).
 	oExported
@@ -302,6 +304,8 @@ func octoWords() {
 	octoWord("REQUIRED", oRequired, 0)
 	octoWord("REQUIRE", oRequire, 0)
 	octoWord("RUN", oRun, 0)
+	octoWord("CATCH", oCatch, 0)
+	octoWord("THROW", oThrow, 0)
 	constWord("R/O", famRO)
 	constWord("W/O", famWO)
 	constWord("R/W", famRW)
@@ -500,6 +504,8 @@ func needs(id int) int {
 		return 4
 	case oRun:
 		return 2
+	case oCatch, oThrow:
+		return 1
 	}
 	if i := id - oExported; i >= 0 && i < nexported {
 		return int(exportedIn[i])
@@ -739,7 +745,7 @@ func octo(id int) {
 			}
 		}
 	case oAbort:
-		abortQuiet()
+		abortQuiet(throwAbort)
 	default:
 		octo2(id)
 	}
@@ -971,7 +977,7 @@ func octo2(id int) {
 		a := pop()
 		push(uint32(accept(a, n)))
 	case oQuit:
-		abortQuiet()
+		abortQuiet(throwQuit)
 	case oAbortQuote:
 		s := parse('"')
 		a := stringHere(s)
@@ -982,12 +988,9 @@ func octo2(id int) {
 	case oAbortQRT:
 		n := pop()
 		a := pop()
-		if pop() != 0 {
-			for i := uint32(0); i < n; i++ {
-				emit(peekb(a + i))
-			}
-			emit('\n')
-			abortQuiet()
+		if pop() != 0 && !aborted {
+			abortQuiet(throwAbortQuote)
+			abortMsg, nabortMsg = a, n
 		}
 	case oEnvironment:
 		pop()

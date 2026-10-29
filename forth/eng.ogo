@@ -46,6 +46,12 @@ func engGetRp() uint32
 func engGetPb() uint32
 func engSetPb(v uint32)
 
+// The innermost DO loop's index and limit, registers of their own.
+func engGetLix() uint32
+func engSetLix(v uint32)
+func engGetLim() uint32
+func engSetLim(v uint32)
+
 // engRequest answers a trap's request, 0 when the word returned.
 func engRequest() uint32
 

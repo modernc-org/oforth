@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-four tests by M3); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-five tests by M3); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -63,8 +63,9 @@ LUT), PASM templates, a literal pin folded into the D field
 (`F_IMMD`, AUGD over 511); `GETCT` and `COGID` became `GET-CT` and
 `COG-ID`; then `RUN`, a word on a cog of its own, the same day; then
 the embedding API, `Define`, `Push` and `Pop` (the user's choice of
-2026-10-29) and `Serial`, with `example/`, M3 done. Next: the SD card
-behind the file layer when a card is back. Not yet: a host twin. The repository is on
+2026-10-29) and `Serial`, with `example/`, M3 done; then CATCH and
+THROW, the EXCEPTION word set, the suite's `exceptiontest.fth`
+passing. Next: the SD card behind the file layer when a card is back. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -314,7 +315,8 @@ All measured or read in this session and recorded with their sources in
   first, with immediates, AUGS and branch targets decoded; `file.ogo` the
   file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
   `nine.ogo` the 9P client under it; `cog.ogo` RUN (`octoCog`, after
-  `octoFile`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
+  `octoFile`); `exception.ogo` CATCH and THROW (`octoException`, after
+  `octoCog`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
   `Serial`; `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
@@ -428,10 +430,24 @@ All measured or read in this session and recorded with their sources in
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
   `jmp pb`; compiled, a primitive is copied, a colon word called, an OctoGo
   word a trap, a constant a pending literal.
-- **An error** is `abort` (or `abortQuiet`, ABORT's and QUIT's): the line stops, a trapped word is abandoned (its
-  state being registers only, nothing unwinds), the stacks are emptied and
-  a definition in progress is taken back. The REPL checks the stacks'
-  bounds after every line. After an error nothing may patch code:
+- **An error** is `abort` (or `abortQuiet`, ABORT's, ABORT"'s and
+  QUIT's), which keeps a THROW code in `abortCode`: ANS's for the
+  messages `throwCodes` has, -256 for any other, -38 for a file
+  (`abortFile`), -1, -2 and -56 for ABORT, ABORT" and QUIT. The error
+  unwinds by return, every loop over input or code stopping at
+  `aborted`, EVALUATE and INCLUDE restoring their input sources and
+  INCLUDE closing its file on the way; a trapped word is abandoned (its
+  state being registers only, nothing unwinds). CATCH (`exception.ogo`)
+  runs its word by a nested `exec`, as compiled code's EVALUATE does,
+  and after a THROW clears the error, takes back a definition begun
+  inside it (`discard`), puts back RP, LIX and LIM and the data stack's
+  depth (`setDepth`, TOS the cell the stack's memory holds there, as in
+  a Forth whose stack is all in memory, which the suite's T10 needs),
+  and pushes the code; QUIT's -56 it lets through. ABORT"'s message is
+  written by `line` only if nothing caught it. Uncaught, an error ends
+  the line: the stacks are emptied and a definition in progress is taken
+  back (`reset`). `TestException`. The REPL checks the stacks' bounds
+  after every line. After an error nothing may patch code:
   `resolve` refuses, and every `csPop` caller stops, since a failed pop
   answers an entry at code[0] (a THEN with no IF once patched DUP's first
   long, which `TestRecovery` holds).
@@ -456,7 +472,7 @@ flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
 flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
-scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT and FILE tests on the board, INCLUDEd by 9P, half a minute; errors: 0
+scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE and EXCEPTION tests on the board, INCLUDEd by 9P, half a minute; errors: 0
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes

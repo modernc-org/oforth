@@ -1,0 +1,128 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"p2"
+)
+
+// CATCH and THROW, the EXCEPTION word set. An error is a THROW: abort keeps
+// its code, ANS's for the system's errors it has one for, and the error
+// unwinds as every error does, each level returning, EVALUATE and INCLUDE
+// restoring their input sources on the way, to the CATCH that ran the word
+// or, with none, to the REPL, which writes it. CATCH runs the word nested,
+// as compiled code's EVALUATE does, and after a THROW puts back the data
+// stack's depth, the return stack and the innermost loop's index and limit,
+// and takes back a definition begun inside it. QUIT is not caught.
+
+// The THROW codes OctoForth gives: ANS's, and its own errors' -256, the
+// first of the codes a system may take for itself.
+const (
+	throwAbort      = 0xffffffff // -1, ABORT
+	throwAbortQuote = 0xfffffffe // -2, ABORT"
+	throwNoFile     = 0xffffffda // -38, a file that is not there
+	throwQuit       = 0xffffffc8 // -56, QUIT, which no CATCH catches
+	throwOwn        = 0xffffff00 // -256, any other error of the system's
+)
+
+// throwCodes gives the system's errors with a code of ANS's by their
+// messages, those abort is given.
+var throwCodes = [...]struct {
+	s string
+	n uint32
+}{
+	{"stack overflow", 0xfffffffd},               // -3
+	{"stack underflow", 0xfffffffc},              // -4
+	{"return stack unbalanced", 0xfffffffa},      // -6
+	{"dictionary full", 0xfffffff8},              // -8, dictionary overflow
+	{"code space full", 0xfffffff8},              // -8
+	{"data space", 0xfffffff8},                   // -8
+	{"division by zero", 0xfffffff6},             // -10
+	{" ?", 0xfffffff3},                           // -13, an undefined word
+	{" is compile-only", 0xfffffff2},             // -14
+	{"a name is missing", 0xfffffff0},            // -16, a name of no length
+	{"pictured number too long", 0xffffffef},     // -17
+	{"bad name", 0xffffffed},                     // -19, a name too long
+	{"unbalanced control structure", 0xffffffea}, // -22
+}
+
+func throwCode(s string) uint32 {
+	for _, c := range throwCodes {
+		if c.s == s {
+			return c.n
+		}
+	}
+	return throwOwn
+}
+
+// ABORT"'s message, which the REPL writes when no CATCH caught it.
+var (
+	abortMsg  uint32
+	nabortMsg uint32
+)
+
+func octoException(id int) {
+	switch id {
+	case oCatch:
+		catch(pop())
+	case oThrow:
+		n := pop()
+		switch n {
+		case 0:
+		case throwAbort, throwAbortQuote:
+			abortQuiet(n)
+		default:
+			if !aborted {
+				abort("uncaught THROW ")
+				abortCode = n
+				nmore = copy(errMore[:], digits(n, true))
+			}
+		}
+	default:
+		if !runExported(id) {
+			abort("no such OctoGo word")
+		}
+	}
+}
+
+// catch runs xt as CATCH does.
+func catch(xt uint32) {
+	d := depth()
+	rp := engGetRp()
+	lix, lim := engGetLix(), engGetLim()
+	wasCompiling := compiling()
+	exec(xt)
+	if !aborted {
+		push(0)
+		return
+	}
+	if abortCode == throwQuit {
+		return
+	}
+	code := abortCode
+	aborted = false
+	quiet = false
+	nabortMsg = 0
+	nerr = 0
+	nmore = 0
+	nwhere = 0
+	if compiling() && !wasCompiling {
+		discard()
+	}
+	setDepth(d)
+	engSetRp(rp)
+	engSetLix(lix)
+	engSetLim(lim)
+	push(code)
+}
+
+// setDepth makes the data stack d cells deep, as a THROW leaves it: the
+// cells kept are what the stack's memory holds, the top one included, as
+// in a Forth whose stack is all in memory, where a word that THROWs may
+// have written over the cells below the depth CATCH puts back.
+func setDepth(d int) {
+	if d > 0 && depth() != d {
+		engSetTos(p2.ReadLUT(ds0 + uint32(d)))
+	}
+	engSetDsp(ds0 + uint32(d))
+}

@@ -557,6 +557,7 @@ func abortFile(name []byte) {
 		return
 	}
 	abortName(name, ": ")
+	abortCode = throwNoFile
 	nmore = copy(errMore[:], nineErr[:nnineErr])
 }
 

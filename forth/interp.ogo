@@ -82,24 +82,29 @@ func Output() []byte { return out[:nout] }
 func ResetOutput() { nout = 0 }
 
 // An error abandons the line, and what was being compiled, and empties the
-// stacks. A quiet one, ABORT's or QUIT's, says nothing.
+// stacks, unless a CATCH catches it (exception.ogo), which is given its
+// THROW code. A quiet one, ABORT's, ABORT"'s or QUIT's, says nothing but
+// ABORT"'s message.
 var (
-	aborted bool
-	quiet   bool
-	abortS  string
+	aborted   bool
+	quiet     bool
+	abortS    string
+	abortCode uint32
 )
 
 func abort(s string) {
 	if !aborted {
 		aborted = true
 		abortS = s
+		abortCode = throwCode(s)
 	}
 }
 
-func abortQuiet() {
+func abortQuiet(code uint32) {
 	if !aborted {
 		aborted = true
 		quiet = true
+		abortCode = code
 	}
 }
 
@@ -360,6 +365,7 @@ func checkStacks() {
 func line() bool {
 	aborted = false
 	quiet = false
+	nabortMsg = 0
 	nerr = 0
 	nmore = 0
 	nwhere = 0
@@ -368,6 +374,10 @@ func line() bool {
 	checkStacks()
 	if !aborted {
 		return true
+	}
+	if quiet && nabortMsg > 0 {
+		typeBytes(memory(abortMsg, nabortMsg))
+		emit('\n')
 	}
 	if !quiet {
 		typeBytes(errWhere[:nwhere])
