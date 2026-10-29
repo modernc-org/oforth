@@ -168,7 +168,7 @@ func TestCompile(t *testing.T) {
 	check(t, ": two 1\n2 ;\ntwo . .", "2 1 ")
 	check(t, ": ctr 0 SWAP 0 DO 1+ LOOP ; 1000 ctr .", "1000 ")
 	check(t, ": imm 42 ; IMMEDIATE : use imm LITERAL ; use .", "42 ")
-	check(t, ": t5 GETCT GETCT SWAP - ; t5 0> .", "-1 ")
+	check(t, ": t5 GET-CT GET-CT SWAP - ; t5 0> .", "-1 ")
 }
 
 func TestErrors(t *testing.T) {
@@ -196,6 +196,7 @@ func TestEncoder(t *testing.T) {
 	emitImm(tNlit, 5)
 	emitImm(tFoldPlus, 100000)
 	emitImm(int(tFold[primTpl("@")]), 0x7fff0)
+	emitImm(int(tFold[primTpl("PIN-HIGH")]), 600)
 	emitImm(tTrap, 300)
 	l := cp
 	cp += 5
@@ -215,8 +216,8 @@ func TestEncoder(t *testing.T) {
 			t.Fail()
 		}
 	}
-	if cp-at != 24 {
-		printf("%d longs, want 24\n", cp-at)
+	if cp-at != 26 {
+		printf("%d longs, want 26\n", cp-at)
 		t.Fail()
 	}
 	cp = at
@@ -481,6 +482,48 @@ func TestRep(t *testing.T) {
 	checkNot(t, "SEE rn5", "NOP")
 	check(t, ": rn6 0 10 0 DO 1+ DUP 5 = IF LEAVE THEN LOOP ; rn6 .", "5 ")
 	checkNot(t, "SEE rn6", "REP ")
+}
+
+// TestP2 holds the P2 words to what the p2 package's functions do, on the
+// P2-EDGE's LED pins P56 and P57, which nothing else drives.
+func TestP2(t *testing.T) {
+	check(t, "CLOCK-FREQ .", "160000000 ")
+	check(t, "56 PIN-HIGH 56 PIN-IN . 56 PIN-LOW 56 PIN-IN . 56 PIN-TOGGLE 56 PIN-IN . 56 PIN-FLOAT", "1 0 1 ")
+	// Compiled, a literal pin folds into the instruction, and a pin's input
+	// follows its output a few clocks late: DRVL #56 and TESTP #56 one after
+	// the other read the pin as it was before.
+	check(t, ": tp1 56 PIN-HIGH 10 WAIT-CYCLES 56 PIN-IN 56 PIN-LOW 10 WAIT-CYCLES 56 PIN-IN 56 PIN-TOGGLE 10 WAIT-CYCLES 56 PIN-IN 56 PIN-FLOAT ; tp1 . . .", "1 0 1 ")
+	checkHas(t, "SEE tp1", "  56 PIN-TOGGLE ")
+	check(t, ": tp2 DUP PIN-HIGH PIN-IN ; 57 tp2 . 57 PIN-FLOAT", "1 ")
+	check(t, "56 1 PIN-WRITE 56 PIN-IN . 56 0 PIN-WRITE 56 PIN-IN . 56 PIN-FLOAT", "1 0 ")
+	check(t, "56 1 6 LSHIFT OR DUP PIN-HIGH 57 PIN-IN . PIN-FLOAT", "1 ")
+	check(t, ": tp3 600 PIN-HIGH 56 PIN-IN ;", "")
+	checkHas(t, "SEE tp3", "  600 PIN-HIGH ")
+	checkHas(t, "SEE tp3", "  56 PIN-IN ")
+	// A smart pin as a long repository, which keeps what WXPIN wrote.
+	check(t, "57 2 0 0 PIN-START 57 99 WRITE-PIN-X 57 READ-PIN . 57 ACK-PIN", "99 ")
+	check(t, ": tp4 57 READ-PIN 57 ACK-PIN ; tp4 . 57 PIN-FLOAT 57 0 WRITE-PIN-MODE", "99 ")
+	// The clocks.
+	check(t, ": tw1 GET-MS 100 WAIT-MS GET-MS SWAP - ; tw1 DUP 99 > SWAP 102 < AND .", "-1 ")
+	check(t, ": tw2 GET-MS 1200 WAIT-MS GET-MS SWAP - ; tw2 DUP 1199 > SWAP 1202 < AND .", "-1 ")
+	check(t, ": tw3 GET-MS 0 WAIT-MS -5 WAIT-MS GET-MS SWAP - ; tw3 2 < .", "-1 ")
+	check(t, ": tw4 GET-US 1000 WAIT-US GET-US SWAP - ; tw4 DUP 999 > SWAP 1010 < AND .", "-1 ")
+	check(t, ": tw5 GET-US 1 WAIT-US GET-US SWAP - ; tw5 20 < .", "-1 ")
+	check(t, ": tw6 GET-CT 1000 WAIT-CYCLES GET-CT SWAP - ; tw6 DUP 999 > SWAP 1020 < AND .", "-1 ")
+	check(t, ": tw7 GET-CT 100000 + DUP WAIT-UNTIL GET-CT SWAP - ; tw7 DUP -1 > SWAP 30 < AND .", "-1 ")
+	check(t, "GET-SEC GET-MS 1000 / - ABS 2 < . GET-US 1000 / GET-MS - ABS 2 < .", "-1 -1 ")
+	// WAIT-MS branches, so a loop with it is cached and not repeated by REP;
+	// WAIT-CYCLES does not.
+	check(t, ": tw8 GET-MS 3 0 DO 2 WAIT-MS LOOP GET-MS SWAP - ; tw8 DUP 5 > SWAP 8 < AND .", "-1 ")
+	checkHas(t, "SEE tw8", "CACHE ")
+	checkNot(t, "SEE tw8", "REP ")
+	check(t, ": tw9 GET-CT 10 0 DO 100 WAIT-CYCLES LOOP GET-CT SWAP - ; tw9 DUP 1000 > SWAP 1200 < AND .", "-1 ")
+	checkHas(t, "SEE tw9", "REP ")
+	// The rest.
+	check(t, "RND RND <> . 1 REV $80000000 = . 5 1234 WRITE-LUT 5 READ-LUT . COG-ID 8 < .", "-1 -1 1234 -1 ")
+	check(t, "NEW-LOCK DUP 0< . DUP TRY-LOCK . DUP UNLOCK FREE-LOCK", "0 -1 ")
+	check(t, ": grab 20 0 DO NEW-LOCK DUP 0< IF DROP LEAVE THEN LOOP ; : free DEPTH 0 ?DO FREE-LOCK LOOP ;", "")
+	check(t, ": tl grab DEPTH DUP 0> SWAP 17 < AND >R free R> ; tl . NEW-LOCK DUP 0< . FREE-LOCK", "-1 0 ")
 }
 
 // The host's files for TestInclude and TestFile: a 9P server in the test,

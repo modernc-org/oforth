@@ -7,11 +7,12 @@
 // code into the word it compiles; that is all the encoding there is, but
 // for an immediate or an address ORed into the field the assembler left 0.
 const (
-	maxTemplates = 160
+	maxTemplates = 192
 
 	tfCalls  = 0x1_0000
 	tfHidden = 0x2_0000
 	tfImm    = 0x4_0000
+	tfImmD   = 0x8_0000 // the immediate is in D, after an AUGD
 	tfSlot1  = 0x10_0000
 )
 
@@ -26,10 +27,10 @@ var (
 	ntpl   int
 
 	// The compiler's own templates, found by name.
-	tDup, tLit, tNlit, tAugs, tCall, tJmp, tJz, tJnz, tJnc, tIf   int
+	tDup, tLit, tNlit, tAugs, tAugd, tCall, tJmp, tJz, tJnz, tJnc int
 	tEnter, tExit, tRet, tTrap, tDo, tQdo, tLoop, tPloop, tUnloop int
 	tFoldPlus, tFoldMinus, tPlus, tMinus, tOf, tUnframe           int
-	tNop, tTag, tTagCmp, tRep                                     int
+	tIf, tNop, tTag, tTagCmp, tRep                                int
 	ds0, dsMax, rp0                                               uint32
 	missAt                                                        uint32 // the engine's cache miss
 )
@@ -75,6 +76,7 @@ func loadTemplates() {
 	tLit = hiddenTpl("~lit")
 	tNlit = hiddenTpl("~nlit")
 	tAugs = hiddenTpl("~augs")
+	tAugd = hiddenTpl("~augd")
 	tCall = hiddenTpl("~call")
 	tJmp = hiddenTpl("~jmp")
 	tJz = hiddenTpl("~jz")
@@ -137,7 +139,7 @@ func loadTemplates() {
 	tImpure[primTpl("EXECUTE")] = true
 	// What a loop's body may not contain to be repeated by REP: a branch,
 	// and UNLOOP, which changes the loop's limit.
-	for _, s := range [...]string{"FILL", "UNLOOP", "EXECUTE"} {
+	for _, s := range [...]string{"FILL", "UNLOOP", "EXECUTE", "WAIT-MS", "WAIT-US"} {
 		tNoRep[primTpl(s)] = true
 	}
 	tPlus = primTpl("+")
@@ -236,8 +238,8 @@ func emitT(t int) {
 	}
 }
 
-// emitImm emits template t with v in its immediate field, preceded by an
-// AUGS for the bits above the nine an instruction holds.
+// emitImm emits template t with v in its immediate field, S or D, preceded
+// by an AUGS or AUGD for the bits above the nine an instruction holds.
 func emitImm(t int, v uint32) {
 	if t == tTrap {
 		lastImpure = cp
@@ -246,14 +248,18 @@ func emitImm(t int, v uint32) {
 	if tFlags[t]&tfSlot1 != 0 {
 		slot = 1
 	}
+	aug, shift := tAugs, uint32(0)
+	if tFlags[t]&tfImmD != 0 {
+		aug, shift = tAugd, 9
+	}
 	for i := 0; i < int(tLen[t]); i++ {
 		w := tplLong(t, i)
 		if i == slot {
 			if v > 511 {
-				emitw(tplLong(tAugs, 0) | v>>9)
+				emitw(tplLong(aug, 0) | v>>9)
 				v &= 511
 			}
-			w |= v
+			w |= v << shift
 		}
 		emitw(w)
 	}

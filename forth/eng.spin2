@@ -51,6 +51,7 @@ CON
   F_CALLS  = $1_0000    ' calls: alone, it needs a frame
   F_HIDDEN = $2_0000    ' the compiler's own, no word of the dictionary
   F_IMM    = $4_0000    ' takes an immediate in the long at its slot
+  F_IMMD   = $8_0000    ' in its D field, after an AUGD, not in S
   SLOT1    = $10_0000   ' the slot is the second long, not the first
 
 ' engRun enters the code at xt and returns when it returns or traps, with the
@@ -713,7 +714,7 @@ count_b       rdbyte  t1, tos
               mov     tos, t1
 count_e
 
-' Loops, calls and the P2.
+' Loops and calls.
               long    (@i_e - @i_b) >> 2
               byte    "I", 0
               alignl
@@ -743,18 +744,285 @@ execute_b     mov     t1, tos
               rdlut   tos, --ptrb
               calld   pb, t1
 execute_e
+
+' The P2: the p2 package's functions, named as it names them with a hyphen
+' before every capital but the first (GetCt is GET-CT) and taking their
+' arguments in its order, the first the deepest; a bool is a flag. A pin is
+' a pin field, as the instructions take it, so 56 is P56 and 56 | 1 << 6
+' P56 and P57. They are PASM, to run on any cog; a literal pin is folded
+' into the instruction, 56 PIN-TOGGLE being DRVNOT #56.
+              long    (@pinh_e - @pinh_b) >> 2
+              byte    "PIN-HIGH", 0
+              alignl
+pinh_b        drvh    tos
+              rdlut   tos, --ptrb
+pinh_e
+              long    (@pinl_e - @pinl_b) >> 2
+              byte    "PIN-LOW", 0
+              alignl
+pinl_b        drvl    tos
+              rdlut   tos, --ptrb
+pinl_e
+              long    (@pinnot_e - @pinnot_b) >> 2
+              byte    "PIN-TOGGLE", 0
+              alignl
+pinnot_b      drvnot  tos
+              rdlut   tos, --ptrb
+pinnot_e
+              long    (@pinf_e - @pinf_b) >> 2
+              byte    "PIN-FLOAT", 0
+              alignl
+pinf_b        fltl    tos
+              rdlut   tos, --ptrb
+pinf_e
+              long    (@pinin_e - @pinin_b) >> 2
+              byte    "PIN-IN", 0
+              alignl
+pinin_b       testp   tos wc                  ' 0 or 1, as p2.PinIn
+              wrc     tos
+pinin_e
+              long    (@pinw_e - @pinw_b) >> 2
+              byte    "PIN-WRITE", 0
+              alignl
+pinw_b        rdlut   t1, --ptrb              ' ( pin v -- ), v's bit 0
+              test    tos, #1 wc
+              drvc    t1
+              rdlut   tos, --ptrb
+pinw_e
+              long    (@pinst_e - @pinst_b) >> 2
+              byte    "PIN-START", 0
+              alignl
+pinst_b       rdlut   t1, --ptrb              ' ( pin mode x y -- )
+              rdlut   t2, --ptrb
+              rdlut   t3, --ptrb
+              dirl    t3
+              wrpin   t2, t3
+              wxpin   t1, t3
+              wypin   tos, t3
+              dirh    t3
+              rdlut   tos, --ptrb
+pinst_e
+              long    (@wrpin_e - @wrpin_b) >> 2
+              byte    "WRITE-PIN-MODE", 0
+              alignl
+wrpin_b       rdlut   t1, --ptrb              ' ( pin mode -- )
+              wrpin   tos, t1
+              rdlut   tos, --ptrb
+wrpin_e
+              long    (@wxpin_e - @wxpin_b) >> 2
+              byte    "WRITE-PIN-X", 0
+              alignl
+wxpin_b       rdlut   t1, --ptrb
+              wxpin   tos, t1
+              rdlut   tos, --ptrb
+wxpin_e
+              long    (@wypin_e - @wypin_b) >> 2
+              byte    "WRITE-PIN-Y", 0
+              alignl
+wypin_b       rdlut   t1, --ptrb
+              wypin   tos, t1
+              rdlut   tos, --ptrb
+wypin_e
+              long    (@rdpin_e - @rdpin_b) >> 2
+              byte    "READ-PIN", 0
+              alignl
+rdpin_b       rdpin   tos, tos
+rdpin_e
+              long    (@akpin_e - @akpin_b) >> 2
+              byte    "ACK-PIN", 0
+              alignl
+akpin_b       akpin   tos
+              rdlut   tos, --ptrb
+akpin_e
+              long    (@waitms_e - @waitms_b) >> 2
+              byte    "WAIT-MS", 0
+              alignl
+waitms_b      getct   t1                      ' as p2.WaitMs: whole seconds
+              rdlong  t2, #$14                ' first, the clocks a second,
+.sec          mov     t3, tos                 ' then the rest; nothing for
+              sub     t3, ##1000              ' 0 or less
+              tjs     t3, #.ms
+              mov     tos, t3
+              addct1  t1, t2
+              waitct1
+              tjns    tos, #.sec
+.ms           tjs     tos, #.done
+              tjz     tos, #.done
+              qmul    tos, t2
+              getqx   t3
+              getqy   t4
+              setq    t4
+              qdiv    t3, ##1000
+              getqx   t3
+              addct1  t1, t3
+              waitct1
+.done         rdlut   tos, --ptrb
+waitms_e
+              long    (@waitus_e - @waitus_b) >> 2
+              byte    "WAIT-US", 0
+              alignl
+waitus_b      getct   t1                      ' as WAIT-MS, and no wait for
+              rdlong  t2, #$14                ' an end that has passed
+.sec          mov     t3, tos
+              sub     t3, ##1000000
+              tjs     t3, #.us
+              mov     tos, t3
+              addct1  t1, t2
+              waitct1
+              tjns    tos, #.sec
+.us           tjs     tos, #.done
+              tjz     tos, #.done
+              qmul    tos, t2
+              getqx   t3
+              getqy   t4
+              setq    t4
+              qdiv    t3, ##1000000
+              getqx   t3
+              add     t1, t3
+              getct   t4
+              add     t4, #80
+              sub     t4, t1
+              tjns    t4, #.done
+              addct1  t1, #0
+              waitct1
+.done         rdlut   tos, --ptrb
+waitus_e
+              long    (@waitx_e - @waitx_b) >> 2
+              byte    "WAIT-CYCLES", 0
+              alignl
+waitx_b       waitx   tos
+              rdlut   tos, --ptrb
+waitx_e
+              long    (@waitct_e - @waitct_b) >> 2
+              byte    "WAIT-UNTIL", 0
+              alignl
+waitct_b      addct1  tos, #0
+              waitct1
+              rdlut   tos, --ptrb
+waitct_e
               long    (@getct_e - @getct_b) >> 2
-              byte    "GETCT", 0
+              byte    "GET-CT", 0
               alignl
 getct_b       wrlut   tos, ptrb++
               getct   tos
 getct_e
+              long    (@getms_e - @getms_b) >> 2
+              byte    "GET-MS", 0
+              alignl
+getms_b       wrlut   tos, ptrb++
+              rdlong  t3, #$14
+              qdiv    t3, ##1000
+              getct   t1 wc
+              getct   t2
+              getqx   t3                      ' the clocks a millisecond
+              qdiv    t1, t3                  ' the high half less what
+              getqy   t1                      ' would overflow, as p2.GetUs
+              setq    t1
+              qdiv    t2, t3
+              getqx   tos
+getms_e
+              long    (@getsec_e - @getsec_b) >> 2
+              byte    "GET-SEC", 0
+              alignl
+getsec_b      wrlut   tos, ptrb++
+              rdlong  t3, #$14
+              getct   t1 wc
+              getct   t2
+              setq    t1
+              qdiv    t2, t3
+              getqx   tos
+getsec_e
+              long    (@getus_e - @getus_b) >> 2
+              byte    "GET-US", 0
+              alignl
+getus_b       wrlut   tos, ptrb++
+              rdlong  t3, #$14
+              qdiv    t3, ##1000000
+              getct   t1 wc
+              getct   t2
+              getqx   t3
+              qdiv    t1, t3
+              getqy   t1
+              setq    t1
+              qdiv    t2, t3
+              getqx   tos
+getus_e
+              long    (@clkfreq_e - @clkfreq_b) >> 2
+              byte    "CLOCK-FREQ", 0
+              alignl
+clkfreq_b     wrlut   tos, ptrb++
+              rdlong  tos, #$14
+clkfreq_e
+              long    (@rnd_e - @rnd_b) >> 2
+              byte    "RND", 0
+              alignl
+rnd_b         wrlut   tos, ptrb++
+              getrnd  tos
+rnd_e
+              long    (@rev_e - @rev_b) >> 2
+              byte    "REV", 0
+              alignl
+rev_b         rev     tos
+rev_e
+              long    (@reboot_e - @reboot_b) >> 2
+              byte    "REBOOT", 0
+              alignl
+reboot_b      rdlong  t1, #$18                ' to RCFAST first, as
+              andn    t1, #3                  ' p2.Reboot does
+              hubset  t1
+              hubset  #0
+              hubset  ##$1000_0000
+reboot_e
+              long    (@rdlut_e - @rdlut_b) >> 2
+              byte    "READ-LUT", 0
+              alignl
+rdlut_b       rdlut   tos, tos
+rdlut_e
+              long    (@wrlut_e - @wrlut_b) >> 2
+              byte    "WRITE-LUT", 0
+              alignl
+wrlut_b       rdlut   t1, --ptrb              ' ( addr v -- )
+              wrlut   tos, t1
+              rdlut   tos, --ptrb
+wrlut_e
+              long    (@locknew_e - @locknew_b) >> 2
+              byte    "NEW-LOCK", 0
+              alignl
+locknew_b     wrlut   tos, ptrb++             ' -1 when none is free,
+              locknew tos wc                  ' which p2.NewLock does
+        if_c  neg     tos, #1                 ' not say
+locknew_e
+              long    (@locktry_e - @locktry_b) >> 2
+              byte    "TRY-LOCK", 0
+              alignl
+locktry_b     locktry tos wc
+              wrc     tos
+              neg     tos
+locktry_e
+              long    (@lockrel_e - @lockrel_b) >> 2
+              byte    "UNLOCK", 0
+              alignl
+lockrel_b     lockrel tos
+              rdlut   tos, --ptrb
+lockrel_e
+              long    (@lockret_e - @lockret_b) >> 2
+              byte    "FREE-LOCK", 0
+              alignl
+lockret_b     lockret tos
+              rdlut   tos, --ptrb
+lockret_e
               long    (@cogid_e - @cogid_b) >> 2
-              byte    "COGID", 0
+              byte    "COG-ID", 0
               alignl
 cogid_b       wrlut   tos, ptrb++
               cogid   tos
 cogid_e
+              long    (@cogstop_e - @cogstop_b) >> 2
+              byte    "COG-STOP", 0
+              alignl
+cogstop_b     cogstop tos
+              rdlut   tos, --ptrb
+cogstop_e
 
 ' The compiler's own: what a literal, a call, a branch, a frame, a trap and a
 ' loop are made of, and the forms a primitive takes with a literal folded in.
@@ -773,6 +1041,11 @@ nlit_e
               alignl
 augs_b        augs    #0
 augs_e
+              long    (@augd_e - @augd_b) >> 2 | F_HIDDEN
+              byte    "~augd", 0
+              alignl
+augd_b        augd    #0
+augd_e
               long    (@call_e - @call_b) >> 2 | F_HIDDEN
               byte    "~call", 0
               alignl
@@ -982,6 +1255,49 @@ fcfetch_e
 fcstore_b     wrbyte  tos, #0
               rdlut   tos, --ptrb
 fcstore_e
+              long    (@fpinh_e - @fpinh_b) >> 2 | F_HIDDEN | F_IMM | F_IMMD
+              byte    "~PIN-HIGH", 0
+              alignl
+fpinh_b       drvh    #0
+fpinh_e
+              long    (@fpinl_e - @fpinl_b) >> 2 | F_HIDDEN | F_IMM | F_IMMD
+              byte    "~PIN-LOW", 0
+              alignl
+fpinl_b       drvl    #0
+fpinl_e
+              long    (@fpinnot_e - @fpinnot_b) >> 2 | F_HIDDEN | F_IMM | F_IMMD
+              byte    "~PIN-TOGGLE", 0
+              alignl
+fpinnot_b     drvnot  #0
+fpinnot_e
+              long    (@fpinf_e - @fpinf_b) >> 2 | F_HIDDEN | F_IMM | F_IMMD
+              byte    "~PIN-FLOAT", 0
+              alignl
+fpinf_b       fltl    #0
+fpinf_e
+              long    (@fpinin_e - @fpinin_b) >> 2 | F_HIDDEN | F_IMM | F_IMMD | SLOT1
+              byte    "~PIN-IN", 0
+              alignl
+fpinin_b      wrlut   tos, ptrb++
+              testp   #0 wc
+              wrc     tos
+fpinin_e
+              long    (@fwaitx_e - @fwaitx_b) >> 2 | F_HIDDEN | F_IMM | F_IMMD
+              byte    "~WAIT-CYCLES", 0
+              alignl
+fwaitx_b      waitx   #0
+fwaitx_e
+              long    (@frdpin_e - @frdpin_b) >> 2 | F_HIDDEN | F_IMM | SLOT1
+              byte    "~READ-PIN", 0
+              alignl
+frdpin_b      wrlut   tos, ptrb++
+              rdpin   tos, #0
+frdpin_e
+              long    (@fakpin_e - @fakpin_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~ACK-PIN", 0
+              alignl
+fakpin_b      akpin   #0
+fakpin_e
               long    -1
 
 ' The cache's miss: a cached loop's loader comes here with its tag in T2
@@ -1005,6 +1321,7 @@ encref        calld   pb, #\$12344
               add     tos, ##100000
               wrlut   tos, ptrb++
               rdlong  tos, ##$7FFF0
+              drvh    ##600
               mov     rq, #300
               calld   cont, back
               mov     t2, ##$12340 | 39 << 20

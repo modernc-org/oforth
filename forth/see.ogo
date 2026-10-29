@@ -44,7 +44,7 @@ func hex(v uint32, width int) {
 }
 
 // match answers how many longs from code[at] template t is, and the
-// immediate or the address in it, AUGS included.
+// immediate or the address in it, AUGS or AUGD included.
 func match(t, at, end int) (int, uint32, bool) {
 	n := int(tLen[t])
 	if n == 0 {
@@ -74,15 +74,19 @@ func match(t, at, end int) (int, uint32, bool) {
 			}
 			v = w & 0xfffff
 		case k == slot:
-			if w&^0x7fffff == tplLong(tAugs, 0) && i+1 < end {
+			a, shift := tAugs, uint32(0)
+			if tFlags[t]&tfImmD != 0 {
+				a, shift = tAugd, 9
+			}
+			if w&^0x7fffff == tplLong(a, 0) && i+1 < end {
 				aug = w & 0x7fffff
 				i++
 				w = code[i]
 			}
-			if w&^511 != tw {
+			if w&^(511<<shift) != tw {
 				return 0, 0, false
 			}
-			v = aug<<9 | w&511
+			v = aug<<9 | w>>shift&511
 		default:
 			if w != tw {
 				return 0, 0, false
@@ -215,7 +219,7 @@ func seeOne(at, end int) int {
 	}
 	for i := 0; i < nseen; i++ {
 		t := int(seeOrder[i])
-		if t == tLit || t == tNlit || t == tAugs || t == tTrap || t == tDup {
+		if t == tLit || t == tNlit || t == tAugs || t == tAugd || t == tTrap || t == tDup {
 			continue
 		}
 		if n, v, ok := match(t, at, end); ok {

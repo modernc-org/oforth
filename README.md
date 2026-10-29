@@ -17,15 +17,17 @@ It is the third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
-**Status, 2026-10-29: milestone M2 done, M4 begun.** A REPL on the serial
-line compiles every colon definition to P2 machine code: 81 primitives
+**Status, 2026-10-29: milestone M2 done, M3 and M4 begun.** A REPL on the serial
+line compiles every colon definition to P2 machine code: 111 primitives
 copied in as P2 instructions, literals folded into the instructions that
 use them, small words inlined, a call in tail position made a jump, a loop
 without calls run from cog RAM, a DO loop there with no branch in its body
 repeated by REP, calls with the return address in a register
 and the return stack in LUT RAM, and 130 words written in OctoGo that
-compiled code calls back into. `INCLUDE` and the FILE words read and
-write the host's files, over the serial line. It passes the CORE, CORE
+compiled code calls back into. The P2's pins, smart pins, clocks, locks
+and LUT are words named after OctoGo's `p2` package's functions.
+`INCLUDE` and the FILE words read and write the host's files, over the
+serial line. It passes the CORE, CORE
 EXT and FILE tests of the Forth-2012 test suite on the board, with 0
 errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
 word's machine code as the words it was compiled from. There is no
@@ -80,6 +82,38 @@ is reported with its name and the line's number, and a `(` comment in a
 file may go on over lines. Under a
 loader with no `-9`, such as `ogo run`'s, INCLUDE gives up after three
 seconds, saying so, the bytes of its request showing on the terminal.
+
+## The P2 words
+
+The P2's pins, smart pins, clocks, locks and LUT are words named after
+the functions of OctoGo's `p2` package, with a hyphen before every
+capital but the first: `PIN-HIGH`, `PIN-LOW`, `PIN-TOGGLE`, `PIN-FLOAT`,
+`PIN-IN`, `PIN-WRITE`, `PIN-START`, `WRITE-PIN-MODE`, `WRITE-PIN-X`,
+`WRITE-PIN-Y`, `READ-PIN`, `ACK-PIN`, `WAIT-MS`, `WAIT-US`,
+`WAIT-CYCLES`, `WAIT-UNTIL`, `GET-CT`, `GET-MS`, `GET-US`, `GET-SEC`,
+`CLOCK-FREQ`, `RND`, `REV`, `REBOOT`, `READ-LUT`, `WRITE-LUT`,
+`NEW-LOCK`, `TRY-LOCK`, `UNLOCK` and `FREE-LOCK`, with `COG-ID` and
+`COG-STOP` beside them. A word takes its function's arguments in the
+function's order, the first the deepest, so `56 1 PIN-WRITE` is
+`p2.PinWrite(56, 1)`. A bool is a flag, and `NEW-LOCK` gives -1 when no
+lock is left, which `p2.NewLock` cannot say. A pin is a pin field, as the
+instructions take it: `56 1 6 LSHIFT OR` is P56 and P57. The console's
+functions are not among them: `KEY`, `EMIT` and `TYPE` are the Forth's.
+
+They are P2 instructions, like the other primitives, so they run on any
+cog, and a literal pin is folded into the instruction:
+
+```
+: blink 10 0 DO 56 PIN-TOGGLE 50 WAIT-MS LOOP ;
+```
+
+blinks the EDGE's LED from cog RAM, `56 PIN-TOGGLE` being the one long
+`DRVNOT #56`. In a DO loop with nothing else in its body, REP repeats it:
+1,000 toggles take 4,133 clocks, 4 a toggle, a 20 MHz square wave at
+160 MHz, and 9,135 with the pin taken from the stack, `DUP PIN-TOGGLE`
+(ogo v0.58.1, 2026-10-29). Code that fast meets the pin's own delay: the
+input follows the output a few clocks late, so `56 PIN-LOW 56 PIN-IN`,
+compiled, reads the pin as it was before.
 
 ## Three Forths on one board
 

@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-one tests by M4); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-two tests by M3); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -56,8 +56,13 @@ multiplication 224 ms to 208; then INCLUDE, 2026-10-29, reading the
 host's files by 9P over the serial line, which the loader serves (`ogo
 loadp2 -t -9 DIR`), with the read-only FILE words over the same layer;
 then the whole FILE word set, writing too, the same day, the suite's
-`filetest.fth` passing. Next: the SD card behind the same layer when
-a card is back. Not yet: a host twin. The repository is on
+`filetest.fth` passing. Then M3, begun the same day, the card being
+out: the P2 words, the `p2` package's functions as words named after
+them (`PIN-HIGH`, `WAIT-MS`, `GET-CT`, the smart pins, the locks, the
+LUT), PASM templates, a literal pin folded into the D field
+(`F_IMMD`, AUGD over 511); `GETCT` and `COGID` became `GET-CT` and
+`COG-ID`. Next: `RUN` and the embedding API, and the SD card behind the
+file layer when a card is back. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -272,13 +277,17 @@ All measured or read in this session and recorded with their sources in
   limit, the outer loops' on the return stack. A trap is `mov rq, #id` and
   `calld cont, back`.
 - **The template table** is self-describing: a header long (length in
-  longs, F_CALLS, F_HIDDEN, F_IMM, SLOT1), the name and a zero, `alignl`,
+  longs, F_CALLS, F_HIDDEN, F_IMM, F_IMMD, SLOT1), the name and a zero, `alignl`,
   the code; -1 ends it. A visible template is a primitive of the
   dictionary; a hidden one, named `~...`, is the compiler's own, and `~X`
   for a primitive X is X's form with a literal folded into the immediate of
-  the long at its slot (AUGS is inserted for a value over 511). A template
-  is copied into words, so it has no absolute branch and calls nothing
-  unless marked F_CALLS (EXECUTE), whose standalone code then gets a frame.
+  the long at its slot (AUGS is inserted for a value over 511), in its D
+  field for F_IMMD (the pins' DRVH #56, after an AUGD). A template is
+  copied into words, so it has no absolute branch and calls nothing
+  unless marked F_CALLS (EXECUTE), whose standalone code then gets a
+  frame; a branch inside it is a TJZ, DJNZ, TJS or their kind, whose
+  offset counts instructions, so that it runs from cog RAM too, and such
+  a template is in `tNoRep` (FILL, WAIT-MS, WAIT-US).
   `encref` after the table is what flexspin assembles of the encoder's
   cases, which `TestEncoder` holds the compiler to.
 - **`forth/`**: `space.ogo` the code space (P2 instructions) and the data
@@ -367,7 +376,7 @@ All measured or read in this session and recorded with their sources in
   LIM; SUB T2, LIX WZ; IF_NZ REP with the block's length in D), for a
   LOOP whose body (`repeatable`) has no branch in `branchAt`, nothing
   impure since its start and nothing of `tNoRep` (FILL, UNLOOP, EXECUTE,
-  and EXIT, `lastNoRep`; `fNoRep` for an inlined word with any of them),
+  WAIT-MS, WAIT-US, and EXIT, `lastNoRep`; `fNoRep` for an inlined word with any of them),
   in a loop short enough to be cached, or `cut`s them out. Such a loop is
   always cached but under `cacheOff`, which leaves the three as NOPs, or
   when `cacheOff` comes before the loop around it ends, which leaves the
@@ -375,6 +384,18 @@ All measured or read in this session and recorded with their sources in
   and `~loop`'s ADD; `~loop`'s CMP and the JNZ, to the body past the REP,
   stay after it for a count of 0, a DO's 2^32 iterations, when the REP
   is not executed. SEE shows `REP n longs`.
+- **The P2 words** (`eng.spin2`, M3): the `p2` package's functions as
+  PASM templates, each named after its function with a hyphen before
+  every capital but the first, taking its arguments in the function's
+  order, the first the deepest, a bool a flag; `NEW-LOCK` gives -1 when
+  none is left (LOCKNEW's C), which `p2.NewLock` does not. The console's
+  functions are left out, KEY, EMIT and TYPE being the Forth's. A pin is
+  a pin field. `TestP2` drives the EDGE's LED pins P56 and P57 and a
+  long repository smart pin on P57 (WXPIN writes it, RDPIN reads it).
+  A pin's input follows its output a few clocks late, so a compiled
+  `56 PIN-LOW 56 PIN-IN`, DRVL #56 then TESTP #56, reads the old state
+  (seen on the board, 2026-10-29). REBOOT resets the board, which then
+  boots TAQOZ from flash.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
