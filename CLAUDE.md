@@ -80,8 +80,12 @@ The files:
   2026-10-28; a draft until the user says otherwise). The gopher is Renee
   French's Go gopher, CC BY 4.0, by way of OctoGo's mascot: the README's
   attribution line stays while the logo does.
-- `main.ogo`, `eng/`, `forth/`: the Forth; "The Forth's architecture"
-  below.
+- `main.ogo`, `forth/`: the Forth; "The Forth's architecture" below.
+  `forth/` is the whole of it but `main.ogo`, its engine included, and
+  imports nothing but `p2` and `unsafe`, so that a program embeds it by
+  copying the one directory: OctoGo takes no external dependencies,
+  every import being a directory of the program's own module. The
+  engine moved there from `eng/` at the user's word, 2026-10-29.
 - `bench/`: the five benchmarks in three dialects, `oforth.fth`,
   `taqoz.fth`, `p2xc.fth`, the same algorithms; `scripts/bench.sh` runs
   them. Nothing of P2XCForth's author is in the repository (the user's
@@ -256,8 +260,10 @@ All measured or read in this session and recorded with their sources in
 
 ## The Forth's architecture
 
-- **`eng/eng.spin2`** is the engine, the one Spin2 object: `run(xt,
-  fresh)`, an `orgh` block that enters code by `calld pb, xt` (probe M0's,
+- **`forth/eng.spin2`** is the engine, the one Spin2 object, and
+  `forth/eng.ogo` its methods as bodiless functions, `engRun` being PUB
+  engRun (Spin2 telling no case apart; the prefix keeps them apart from
+  the package's own names): `engRun(xt, fresh)`, an `orgh` block that enters code by `calld pb, xt` (probe M0's,
   grown a trap), the register accessors, and the templates. Its header
   comment is the register map: TOS in PR0, PB a word's link, the data stack
   in LUT 8 to 167 through PTRB (LUT 8 an unread cell, so that DUP on an
@@ -289,7 +295,8 @@ All measured or read in this session and recorded with their sources in
   `see.ogo` SEE, which reads code back by matching the templates, longest
   first, with immediates, AUGS and branch targets decoded; `file.ogo` the
   file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
-  `nine.ogo` the 9P client under it.
+  `nine.ogo` the 9P client under it; `eng.ogo` and `eng.spin2` the
+  engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
   written and not yet sent (`dirty`), `off` where in the file it starts
@@ -349,8 +356,9 @@ All measured or read in this session and recorded with their sources in
   `~tagcmp` (CMP T2, CTAG), a `~jnz` to the engine's `cmiss`, which copies
   the loop in by SETQ and RDLONG and sets CTAG, and a jump to $000; the
   loop's branches to itself become cog addresses and its last long a jump
-  back. CTAG is $1EC; `run` clears it at every entry, the backend's own
-  FCACHE loads coming between runs; a cog `start`ed must clear it too.
+  back. CTAG is $1EC; `engRun` clears it at every entry, the backend's
+  own FCACHE loads coming between runs; a cog `engStart`ed must clear it
+  too.
   DOES> and `define` inside an open loop set `cacheOff`, their code
   having to stay put. SEE shows `CACHE n longs from addr` and `cog`
   targets.

@@ -17,15 +17,15 @@
 ' A loop the compiler caches runs from cog RAM $000, the backend's FCACHE
 ' area, which is free while a word runs. CTAG names the loop cog RAM holds,
 ' by its hub address and length less one in bits 27:20, so that a loop
-' entered again is not copied again; run clears it at every entry, the
+' entered again is not copied again; engRun clears it at every entry, the
 ' backend's own loops taking the area between runs. A DO LOOP there whose
 ' body has no branch repeats it by REP, LOOP's increment of LIX the block's
 ' last long; with a count of 0, which is 2^32 iterations, the REP is not
 ' executed and the loop runs by LOOP's compare and branch.
 '
 ' A trap is a word asking OctoGo for something: "mov rq, #id" and "calld
-' cont, back". run returns to OctoGo with the request in RQ and the
-' continuation in CONT; OctoGo serves it and calls run again at CONT with
+' cont, back". engRun returns to OctoGo with the request in RQ and the
+' continuation in CONT; OctoGo serves it and calls engRun again at CONT with
 ' fresh = 0, which leaves PB as the word left it.
 
 CON
@@ -34,7 +34,7 @@ CON
   rq    = $1E2          ' PR2, a trap's request
   cont  = $1E3          ' PR3, a trap's continuation
   t2    = $1E4          ' PR4
-  back  = $1E5          ' PR5, run's return point
+  back  = $1E5          ' PR5, engRun's return point
   rp    = $1E6          ' PR6, the return stack's index
   dsp   = $1E7          ' PR7, PTRB kept between runs
   lix   = $1E8          ' the innermost loop's index
@@ -53,10 +53,10 @@ CON
   F_IMM    = $4_0000    ' takes an immediate in the long at its slot
   SLOT1    = $10_0000   ' the slot is the second long, not the first
 
-' run enters the code at xt and returns when it returns or traps, with the
+' engRun enters the code at xt and returns when it returns or traps, with the
 ' clocks it took. fresh = 1 starts a word: PB is set to return here. fresh =
 ' 0 resumes a trap's continuation and leaves PB alone.
-PUB run(xt, fresh) : cyc | t, t0
+PUB engRun(xt, fresh) : cyc | t, t0
   orgh
                 mov     t, ptrb
                 mov     ptrb, dsp
@@ -76,52 +76,52 @@ enter
 done
   end
 
-' start runs the code at xt on a free cog, in hub execution, with par in
-' PTRA. It answers the cog or -1. The code must clear CTAG, as run does,
+' engStart runs the code at xt on a free cog, in hub execution, with par in
+' PTRA. It answers the cog or -1. The code must clear CTAG, as engRun does,
 ' before it runs a cached loop.
-PUB start(xt, par) : cog
+PUB engStart(xt, par) : cog
   cog := coginit(HUBEXEC_NEW, xt, par)
 
-PUB templates() : a
+PUB engTemplates() : a
   a := @tb
 
-PUB refs() : a
+PUB engRefs() : a
   a := @encref
 
-PUB missAddr() : a
+PUB engMissAddr() : a
   a := @cmiss
 
-PUB setTos(v)
+PUB engSetTos(v)
   PR0 := v
 
-PUB getTos() : r
+PUB engGetTos() : r
   r := PR0
 
-PUB setDsp(v)
+PUB engSetDsp(v)
   PR7 := v
 
-PUB getDsp() : r
+PUB engGetDsp() : r
   r := PR7
 
-PUB setRp(v)
+PUB engSetRp(v)
   PR6 := v
 
-PUB getRp() : r
+PUB engGetRp() : r
   r := PR6
 
-PUB request() : r
+PUB engRequest() : r
   r := PR2
 
-PUB continuation() : r
+PUB engContinuation() : r
   r := PR3
 
-PUB getPb() : r
+PUB engGetPb() : r
   r := PB
 
-PUB setPb(v)
+PUB engSetPb(v)
   PB := v
 
-PUB layout(i) : r
+PUB engLayout(i) : r
   case i
     0: r := DS0
     1: r := DSMAX

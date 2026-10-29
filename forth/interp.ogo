@@ -5,8 +5,6 @@
 import (
 	"p2"
 	"unsafe"
-
-	"modernc.org/oforth/eng"
 )
 
 // The input source: a line read into tib, or what EVALUATE was given. src
@@ -106,63 +104,63 @@ func abortQuiet() {
 }
 
 func reset() {
-	eng.SetDsp(ds0)
-	eng.SetRp(rp0)
+	engSetDsp(ds0)
+	engSetRp(rp0)
 	discard()
 }
 
 // The data stack, from OctoGo: TOS in a register, the rest in LUT.
-func depth() int { return int(eng.GetDsp()) - int(ds0) }
+func depth() int { return int(engGetDsp()) - int(ds0) }
 
 func push(v uint32) {
-	d := eng.GetDsp()
+	d := engGetDsp()
 	if d >= dsMax {
 		abort("stack overflow")
 		return
 	}
-	p2.WriteLUT(d, eng.GetTos())
-	eng.SetDsp(d + 1)
-	eng.SetTos(v)
+	p2.WriteLUT(d, engGetTos())
+	engSetDsp(d + 1)
+	engSetTos(v)
 }
 
 func pop() uint32 {
-	d := eng.GetDsp()
+	d := engGetDsp()
 	if d <= ds0 {
 		abort("stack underflow")
 		return 0
 	}
-	v := eng.GetTos()
-	eng.SetDsp(d - 1)
-	eng.SetTos(p2.ReadLUT(d - 1))
+	v := engGetTos()
+	engSetDsp(d - 1)
+	engSetTos(p2.ReadLUT(d - 1))
 	return v
 }
 
 // nth answers the cell n below TOS, TOS being 0.
 func nth(n int) uint32 {
 	if n == 0 {
-		return eng.GetTos()
+		return engGetTos()
 	}
-	return p2.ReadLUT(eng.GetDsp() - uint32(n))
+	return p2.ReadLUT(engGetDsp() - uint32(n))
 }
 
 // exec runs the code at xt, serving its traps, until it returns.
 func exec(xt uint32) {
-	eng.Run(xt, 1)
+	engRun(xt, 1)
 	for !aborted {
-		r := eng.Request()
+		r := engRequest()
 		if r == 0 {
 			return
 		}
 		// What the word goes on with is kept here, for a word OctoGo runs
 		// while serving the trap would change it.
-		k := eng.Continuation()
-		pb := eng.GetPb()
+		k := engContinuation()
+		pb := engGetPb()
 		octo(int(r))
 		if aborted {
 			return
 		}
-		eng.SetPb(pb)
-		eng.Run(k, 0)
+		engSetPb(pb)
+		engRun(k, 0)
 	}
 }
 
@@ -345,8 +343,8 @@ func checkStacks() {
 	if aborted {
 		return
 	}
-	d := eng.GetDsp()
-	r := eng.GetRp()
+	d := engGetDsp()
+	r := engGetRp()
 	switch {
 	case d < ds0:
 		abort("stack underflow")

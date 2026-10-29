@@ -1,0 +1,50 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The engine: the entry into code compiled at run time and the PASM
+// templates words are made of, in eng.spin2, whose comments give the
+// registers, the stacks and the trap. Its methods are the functions here,
+// Spin2 telling no case apart: engRun is PUB engRun.
+//
+// The engine's state is in registers and LUT RAM of the cog that runs it, so
+// a program runs words on one cog only, the one that calls engRun, and the
+// accessors here read that cog's registers.
+
+// engRun runs the code at xt until it returns or traps and answers the clocks
+// it took. fresh is 1 to start a word and 0 to resume a trap's continuation.
+func engRun(xt, fresh uint32) uint32
+
+// engStart runs the code at xt on a free cog with par in PTRA and answers the
+// cog, or -1.
+func engStart(xt, par uint32) int32
+
+// engTemplates answers the hub address of the first template.
+func engTemplates() uint32
+
+// engRefs answers the hub address of the instructions the encoder's test holds
+// the compiler's output to, as flexspin assembled them.
+func engRefs() uint32
+
+// engMissAddr answers the hub address of the routine that copies a cached loop
+// into cog RAM.
+func engMissAddr() uint32
+
+func engSetTos(v uint32)
+func engGetTos() uint32
+func engSetDsp(v uint32)
+func engGetDsp() uint32
+func engSetRp(v uint32)
+func engGetRp() uint32
+func engGetPb() uint32
+func engSetPb(v uint32)
+
+// engRequest answers a trap's request, 0 when the word returned.
+func engRequest() uint32
+
+// engContinuation answers where a trapped word goes on.
+func engContinuation() uint32
+
+// engLayout answers the stacks' bounds: 0 for the data stack's base, 1 for its
+// end, 2 for the empty return stack.
+func engLayout(i int32) uint32

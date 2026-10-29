@@ -5,8 +5,6 @@
 import (
 	"testing"
 	"unsafe"
-
-	"modernc.org/oforth/eng"
 )
 
 // The tests run Forth source on the board and compare what it writes. Each
@@ -187,7 +185,7 @@ func TestErrors(t *testing.T) {
 // TestEncoder holds what the compiler makes of its templates to what
 // flexspin's assembler makes of the same instructions.
 func TestEncoder(t *testing.T) {
-	r := eng.Refs()
+	r := engRefs()
 	at := cp
 	emitAbs(tCall, 0x12344)
 	emitAbs(tJmp, 0x1f000)

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-import "modernc.org/oforth/eng"
-
 // The templates, as eng.spin2 lays them out: a header long, the name and a
 // zero, and the code from the next long. The compiler copies a template's
 // code into the word it compiles; that is all the encoding there is, but
@@ -41,11 +39,11 @@ func tplLong(t, i int) uint32 { return peek(tAddr[t] + uint32(i)*4) }
 // loadTemplates reads the table, defines a word for each template that is
 // one, and finds the compiler's own.
 func loadTemplates() {
-	ds0 = eng.Layout(0)
-	dsMax = eng.Layout(1)
-	rp0 = eng.Layout(2)
+	ds0 = engLayout(0)
+	dsMax = engLayout(1)
+	rp0 = engLayout(2)
 	nn := 0
-	p := eng.Templates()
+	p := engTemplates()
 	for {
 		h := peek(p)
 		if h == 0xffffffff {
@@ -99,7 +97,7 @@ func loadTemplates() {
 	tTag = hiddenTpl("~tag")
 	tRep = hiddenTpl("~rep")
 	tTagCmp = hiddenTpl("~tagcmp")
-	missAt = eng.MissAddr()
+	missAt = engMissAddr()
 	for t := 0; t < ntpl; t++ {
 		if tFlags[t]&tfHidden != 0 {
 			continue

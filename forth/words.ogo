@@ -6,7 +6,6 @@ import (
 	"p2"
 	"unsafe"
 
-	"modernc.org/oforth/eng"
 )
 
 // The words OctoGo executes. Compiled, each is a trap with its number; the
@@ -780,10 +779,10 @@ func digit(c byte) uint32 {
 
 func setNth(n int, v uint32) {
 	if n == 0 {
-		eng.SetTos(v)
+		engSetTos(v)
 		return
 	}
-	p2.WriteLUT(eng.GetDsp()-uint32(n), v)
+	p2.WriteLUT(engGetDsp()-uint32(n), v)
 }
 
 // valueOf parses a name for TO, IS and ACTION-OF, which must be of kind k.
