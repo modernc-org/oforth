@@ -8,8 +8,9 @@
 // Spin2 telling no case apart: engRun is PUB engRun.
 //
 // The engine's state is in registers and LUT RAM of the cog that runs it, so
-// a program runs words on one cog only, the one that calls engRun, and the
-// accessors here read that cog's registers.
+// the accessors here read the registers of the cog that calls them, the one
+// that calls engRun. A cog RUN starts runs the engine's runner, with
+// registers and stacks of its own.
 
 // engRun runs the code at xt until it returns or traps and answers the clocks
 // it took. fresh is 1 to start a word and 0 to resume a trap's continuation.
@@ -18,6 +19,12 @@ func engRun(xt, fresh uint32) uint32
 // engStart runs the code at xt on a free cog with par in PTRA and answers the
 // cog, or -1.
 func engStart(xt, par uint32) int32
+
+// engRunner answers the hub address of the runner, where a cog RUN starts
+// begins, and engRunEnd where its word goes when it returns or traps, which
+// stops the cog.
+func engRunner() uint32
+func engRunEnd() uint32
 
 // engTemplates answers the hub address of the first template.
 func engTemplates() uint32

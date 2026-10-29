@@ -526,6 +526,30 @@ func TestP2(t *testing.T) {
 	check(t, ": tl grab DEPTH DUP 0> SWAP 17 < AND >R free R> ; tl . NEW-LOCK DUP 0< . FREE-LOCK", "-1 0 ")
 }
 
+// TestRun holds RUN to running a word on a cog of its own, with the cells it
+// is given, to freeing the cog when the word returns, and to refusing a word
+// that calls OctoGo.
+func TestRun(t *testing.T) {
+	check(t, "VARIABLE rv : r1 rv ! ; 42 1 ' r1 RUN 0< . 1 WAIT-MS rv @ .", "0 42 ")
+	check(t, ": r2 + rv ! ; 3 4 2 ' r2 RUN DROP 1 WAIT-MS rv @ .", "7 ")
+	// A loop, cached in the other cog's RAM, until COG-STOP.
+	check(t, ": r3 BEGIN 1 rv +! AGAIN ; 0 rv ! 0 ' r3 RUN 1 WAIT-MS COG-STOP rv @ DUP 0> . 1 WAIT-MS rv @ = .", "-1 -1 ")
+	checkHas(t, "SEE r3", "CACHE ")
+	// The cog is free again when the word returns.
+	check(t, ": r4 ; : r5 0 20 0 DO 0 ['] r4 RUN 0< OR 1 WAIT-MS LOOP ; r5 .", "0 ")
+	// Every free cog, and then -1.
+	check(t, ": r6 BEGIN AGAIN ; : r7 BEGIN 0 ['] r6 RUN DUP 0< UNTIL DROP ; : r8 DEPTH 0 ?DO COG-STOP LOOP ;", "")
+	check(t, ": r9 r7 DEPTH DUP 0> SWAP 8 < AND >R r8 R> ; r9 . 0 ' r4 RUN 0< .", "-1 0 ")
+	// A pin the other cog drives, which it lets go when it stops.
+	check(t, ": r10 PIN-HIGH BEGIN AGAIN ; 57 1 ' r10 RUN 1 WAIT-MS 57 PIN-IN . COG-STOP", "1 ")
+	// A word that calls OctoGo is not run.
+	check(t, ": r11 1 . ; 0 ' r11 RUN", "r11 calls OctoGo, which only this cog runs\n")
+	check(t, ": r12 2 r11 ; 0 ' r12 RUN", "r12 calls OctoGo, which only this cog runs\n")
+	check(t, "0 ' . RUN", ". calls OctoGo, which only this cog runs\n")
+	check(t, "17 ' r1 RUN", "error: RUN takes at most 16 cells\n")
+	check(t, "1 ' r1 RUN", "error: stack underflow\n")
+}
+
 // The host's files for TestInclude and TestFile: a 9P server in the test,
 // which reads the messages the client writes into out, takes them out of
 // it, and answers by Key, as the loader does over the serial line. Its

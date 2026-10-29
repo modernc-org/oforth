@@ -28,6 +28,7 @@ const (
 	fHidden    // a definition not yet ended
 	fCompile   // compile only
 	fNoRep     // inlined, its body breaks a REP (compile.ogo's tNoRep)
+	fTraps     // calls OctoGo, by a trap of its own or in a word it calls
 )
 
 type word struct {

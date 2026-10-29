@@ -194,6 +194,7 @@ var (
 	landing   int
 	inlinable bool
 	bodyStart int
+	traps     bool // a trap is compiled, or a call of a word with one
 
 	tNoInline [maxTemplates]bool
 	tImpure   [maxTemplates]bool // calls, so no loop with it is cached
@@ -243,6 +244,7 @@ func emitT(t int) {
 func emitImm(t int, v uint32) {
 	if t == tTrap {
 		lastImpure = cp
+		traps = true
 	}
 	slot := 0
 	if tFlags[t]&tfSlot1 != 0 {
@@ -360,6 +362,9 @@ func compileWord(w int) {
 			}
 			return
 		}
+		if words[w].flags&fTraps != 0 {
+			traps = true
+		}
 		emitAbs(tCall, words[w].xt)
 	case kOcto:
 		flushLit()
@@ -461,6 +466,7 @@ func beginColon(s []byte, anon bool) {
 	lastCall = -1
 	landing = -1
 	inlinable = true
+	traps = false
 	bodyStart = cp
 	nbranch = 0
 	lastImpure = -1
@@ -503,6 +509,9 @@ func endColon() {
 		}
 	}
 	words[current].size = int32(cp) - int32((words[current].xt-codeAddr(0))/4)
+	if traps {
+		words[current].flags |= fTraps
+	}
 	setCompiling(false)
 	if noname {
 		push(words[current].xt)

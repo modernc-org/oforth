@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-two tests by M3); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-three tests by M3); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -61,8 +61,9 @@ out: the P2 words, the `p2` package's functions as words named after
 them (`PIN-HIGH`, `WAIT-MS`, `GET-CT`, the smart pins, the locks, the
 LUT), PASM templates, a literal pin folded into the D field
 (`F_IMMD`, AUGD over 511); `GETCT` and `COGID` became `GET-CT` and
-`COG-ID`. Next: `RUN` and the embedding API, and the SD card behind the
-file layer when a card is back. Not yet: a host twin. The repository is on
+`COG-ID`; then `RUN`, a word on a cog of its own, the same day. Next:
+the embedding API's table of exported functions and its demo, and the
+SD card behind the file layer when a card is back. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -304,8 +305,8 @@ All measured or read in this session and recorded with their sources in
   `see.ogo` SEE, which reads code back by matching the templates, longest
   first, with immediates, AUGS and branch targets decoded; `file.ogo` the
   file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
-  `nine.ogo` the 9P client under it; `eng.ogo` and `eng.spin2` the
-  engine, above.
+  `nine.ogo` the 9P client under it; `cog.ogo` RUN (`octoCog`, after
+  `octoFile`); `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
   written and not yet sent (`dirty`), `off` where in the file it starts
@@ -396,6 +397,17 @@ All measured or read in this session and recorded with their sources in
   `56 PIN-LOW 56 PIN-IN`, DRVL #56 then TESTP #56, reads the old state
   (seen on the board, 2026-10-29). REBOOT resets the board, which then
   boots TAQOZ from flash.
+- **RUN** (`cog.ogo`, M3): `RUN ( x1 .. xn n xt -- cog )` fills
+  `launch` (taken, xt, the end, n, the cells) and starts the engine's
+  `runner` by `engStart` with the block in PTRA; the runner sets PTRB,
+  RP, CTAG and TOS, pushes the cells, clears the block's first long,
+  which RUN waits for, and jumps to the word with PB and BACK both
+  `runend`, which stops the cog, so that the word's return and any trap
+  end there. A colon definition that compiles a trap, or a call of a
+  word with `fTraps`, gets `fTraps` at `;` (`traps`), and RUN refuses
+  it and an OctoGo word; a kDoes or an EXECUTE is not followed, and
+  traps on the cog, which stops. `TestRun`. The REPL is cog 0 and the
+  console's reader cog 1, so six are free.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and

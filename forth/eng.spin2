@@ -83,6 +83,14 @@ done
 PUB engStart(xt, par) : cog
   cog := coginit(HUBEXEC_NEW, xt, par)
 
+' engRunner and engRunEnd answer where a cog RUN starts begins and where its
+' word goes when it returns or traps.
+PUB engRunner() : a
+  a := @runner
+
+PUB engRunEnd() : a
+  a := @runend
+
 PUB engTemplates() : a
   a := @tb
 
@@ -1308,6 +1316,32 @@ cmiss         mov     ctag, t2
               setq    t2
               rdlong  0, ctag
               jmp     #\0
+
+' The runner, the engine's image for a cog of its own: a cog RUN starts
+' begins here with its launch block in PTRA, which has whether it is yet to
+' be taken, the word, where the word goes when it returns or traps, the
+' count of cells for its stack, and the cells, the first the deepest. The
+' cog's registers, LUT and cog RAM are its own, so the word has stacks and
+' a loop cache of its own; at its end the cog stops, a trap included, for
+' only the cog that runs OctoGo serves one.
+runner        rdlong  t1, ptra[1]             ' the word
+              rdlong  back, ptra[2]           ' its end
+              rdlong  t2, ptra[3]             ' the count of cells
+              mov     t3, ptra
+              add     ptra, #16
+              mov     ptrb, #DS0
+              mov     rp, #RP0
+              mov     ctag, #0
+              mov     tos, #0
+.cell         tjz     t2, #.go
+              wrlut   tos, ptrb++
+              rdlong  tos, ptra++
+              djnz    t2, #.cell
+.go           wrlong  #0, t3                  ' taken
+              mov     pb, back
+              jmp     t1
+runend        cogid   t1
+              cogstop t1
 
 ' What the encoder must make of the templates, as flexspin assembles it, for
 ' the test of the encoder.

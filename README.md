@@ -23,10 +23,10 @@ copied in as P2 instructions, literals folded into the instructions that
 use them, small words inlined, a call in tail position made a jump, a loop
 without calls run from cog RAM, a DO loop there with no branch in its body
 repeated by REP, calls with the return address in a register
-and the return stack in LUT RAM, and 130 words written in OctoGo that
+and the return stack in LUT RAM, and 131 words written in OctoGo that
 compiled code calls back into. The P2's pins, smart pins, clocks, locks
-and LUT are words named after OctoGo's `p2` package's functions.
-`INCLUDE` and the FILE words read and write the host's files, over the
+and LUT are words named after OctoGo's `p2` package's functions, and
+`RUN` runs a word on a cog of its own. `INCLUDE` and the FILE words read and write the host's files, over the
 serial line. It passes the CORE, CORE
 EXT and FILE tests of the Forth-2012 test suite on the board, with 0
 errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
@@ -114,6 +114,22 @@ blinks the EDGE's LED from cog RAM, `56 PIN-TOGGLE` being the one long
 (ogo v0.58.1, 2026-10-29). Code that fast meets the pin's own delay: the
 input follows the output a few clocks late, so `56 PIN-LOW 56 PIN-IN`,
 compiled, reads the pin as it was before.
+
+`RUN ( x1 .. xn n xt -- cog )` runs a word on a free cog, the n cells its
+stack, and answers the cog, or -1 when none is free; `COG-STOP` stops it.
+The cog has registers, stacks and a loop cache of its own, and stops when
+the word returns. It cannot call into OctoGo, which runs on the REPL's
+cog, so `RUN` refuses a word that does, such as one that prints, and the
+two cogs talk through hub RAM. So
+
+```
+: blinker ( pin ms -- ) BEGIN OVER PIN-TOGGLE DUP WAIT-MS AGAIN ;
+56 100 2 ' blinker RUN .  57 150 2 ' blinker RUN .
+```
+
+blinks the two LEDs from two cogs while the REPL goes on. With the REPL
+on cog 0 and the console's reader on cog 1, six cogs are free; a `RUN`
+takes 5,282 clocks until the cog has its cells.
 
 ## Three Forths on one board
 
@@ -268,7 +284,7 @@ the Intel 8080 did in the 1980s, on paper, on a Tesla JPR-1:
   access, and the top of the stack in a register;
 - the outer interpreter, the dictionary and the compiler are OctoGo, so a
   word calls into the OctoGo program it runs in, as `.` and `TYPE` already
-  do; a word is to be sent to run on a cog of its own, as `go` sends a
+  do; `RUN` sends a word to run on a cog of its own, as `go` sends a
   function.
 
 ASSESSMENT.md has the prior art, the clocks per operation of TAQOZ, P2XCForth

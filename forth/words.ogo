@@ -142,6 +142,7 @@ const (
 	oFileStatus
 	oRequired
 	oRequire
+	oRun
 )
 
 // Words the compiler compiles where it makes something of its own.
@@ -297,6 +298,7 @@ func octoWords() {
 	octoWord("FILE-STATUS", oFileStatus, 0)
 	octoWord("REQUIRED", oRequired, 0)
 	octoWord("REQUIRE", oRequire, 0)
+	octoWord("RUN", oRun, 0)
 	constWord("R/O", famRO)
 	constWord("W/O", famWO)
 	constWord("R/W", famRW)
@@ -493,6 +495,8 @@ func needs(id int) int {
 		return 3
 	case oRenameFile:
 		return 4
+	case oRun:
+		return 2
 	}
 	return 0
 }

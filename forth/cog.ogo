@@ -1,0 +1,56 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"unsafe"
+)
+
+// RUN runs a word on a cog of its own, ( x1 .. xn n xt -- cog ), the n
+// cells its stack, and answers the cog, or -1 when none is free. The cog
+// runs the engine's runner (eng.spin2), which gives the word stacks of its
+// own and stops the cog when the word returns. A word that calls OctoGo,
+// by a trap of its own or in a word it calls (fTraps), is not run, for
+// only this cog serves a trap; one that traps all the same, by EXECUTE or
+// a DOES> word, stops its cog there.
+
+const maxRunCells = 16
+
+// launch is what RUN gives the cog it starts: whether it is yet to be
+// taken, the word, where the word goes when it ends, the count of cells,
+// and the cells, the first the deepest.
+var launch [4 + maxRunCells]uint32
+
+func octoCog(id int) {
+	switch id {
+	case oRun:
+		xt := pop()
+		n := pop()
+		if n > maxRunCells {
+			abort("RUN takes at most 16 cells")
+			return
+		}
+		if depth() < int(n) {
+			abort("stack underflow")
+			return
+		}
+		w := wordOfXt(xt)
+		if w >= 0 && (words[w].kind == kOcto || words[w].flags&fTraps != 0) {
+			abortName(wordName(w), " calls OctoGo, which only this cog runs")
+			return
+		}
+		for i := int(n) - 1; i >= 0; i-- {
+			launch[4+i] = pop()
+		}
+		launch[1] = xt
+		launch[2] = engRunEnd()
+		launch[3] = n
+		launch[0] = 1
+		cog := engStart(engRunner(), uint32(uintptr(unsafe.Pointer(&launch[0]))))
+		for cog >= 0 && launch[0] != 0 {
+		}
+		push(uint32(cog))
+	default:
+		abort("no such OctoGo word")
+	}
+}
