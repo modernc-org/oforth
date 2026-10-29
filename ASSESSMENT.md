@@ -717,7 +717,8 @@ copies templates from the `DAT`'s hub address, read through
 `unsafe.Pointer`, into a package array, ORs addresses into the `calld`
 and `calla` templates, and runs the result. Each figure is the code's own,
 the cost of entering an empty word subtracted, and the same within 8
-clocks over three loads:
+clocks over three loads, and again so with ogo v1.0.0-rc.3 on
+2026-10-29:
 
 | What | Clocks |
 | --- | --- |

@@ -954,7 +954,7 @@ func TestInclude(t *testing.T) {
 	hostSays = false
 	nineUp = false
 	nineWait = 20
-	check(t, "INCLUDE a.fth", "a.fth: no file server: load with ogo loadp2 -9 DIR\n")
+	check(t, "INCLUDE a.fth", "a.fth: no file server: load with ogo run -9 DIR\n")
 	nineWait = 3000
 	Key = nil
 	Avail = nil

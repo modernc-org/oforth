@@ -9,9 +9,10 @@
 //	ogo build ./probe/m0 && ogo loadp2 -t -p /dev/ttyUSB0 -b 230400 m0.binary
 
 import (
-	"eng"
 	"p2"
 	"unsafe"
+
+	"modernc.org/oforth/probe/m0/eng"
 )
 
 const (

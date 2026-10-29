@@ -7,15 +7,15 @@ import (
 )
 
 // The host's files, read by 9P over the console's serial line: the loader
-// serves a directory so when it is given one, ogo loadp2 -t -9 DIR. A
-// message goes out after the two bytes $FF $01, which tell the loader that
-// one follows, and the reply comes back with no mark before it, among what
-// is typed: input that was on its way, or typed while the reply was, comes
-// before it. The reply is found by its first seven bytes, its size, type
-// and tag, its size having two zero bytes that no text has, and the bytes
-// before them wait in ahead for accept and KEY. A message is the 9P2000
-// one: its size in four bytes, little-endian as every number in it, the
-// size included, then its type, its tag and what the type has.
+// serves a directory so when it is given one, ogo run -9 DIR or ogo loadp2
+// -t -9 DIR. A message goes out after the two bytes $FF $01, which tell the
+// loader that one follows, and the reply comes back with no mark before it,
+// among what is typed: input that was on its way, or typed while the reply
+// was, comes before it. The reply is found by its first seven bytes, its
+// size, type and tag, its size having two zero bytes that no text has, and
+// the bytes before them wait in ahead for accept and KEY. A message is the
+// 9P2000 one: its size in four bytes, little-endian as every number in it,
+// the size included, then its type, its tag and what the type has.
 
 // Avail answers whether Key has a byte waiting, which the client asks
 // before it reads a reply, giving up when nothing came for a while.
@@ -151,7 +151,7 @@ func rpc(n int) bool {
 		c := keyWithin()
 		if c < 0 {
 			nineUp = false
-			setNineErr("no file server: load with ogo loadp2 -9 DIR")
+			setNineErr("no file server: load with ogo run -9 DIR")
 			return false
 		}
 		nine[i] = byte(c)

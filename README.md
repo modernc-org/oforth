@@ -61,13 +61,15 @@ SEE sq sq is a colon definition
 
 Pasted source works: a cog of its own reads the serial line.
 
-To INCLUDE files, load it with the loader's file server, which serves a
+To INCLUDE files, run it with the loader's file server, which serves a
 directory of the host by 9P over the same serial line:
 
 ```sh
-ogo build
-ogo loadp2 -t -9 . -b 230400 oforth.binary
+ogo run -9 .
 ```
+
+(`ogo run -9` is OctoGo v1.0.0-rc.3's; with an older one, `ogo build`
+and `ogo loadp2 -t -9 . -b 230400 oforth.binary`.)
 
 ```
 INCLUDE bench/oforth.fth
@@ -82,7 +84,7 @@ The FILE word set reads and writes files so too: `INCLUDED`,
 renames a file within its directory only, as 9P does. An error in a file
 is reported with its name and the line's number, and a `(` comment in a
 file may go on over lines. Under a
-loader with no `-9`, such as `ogo run`'s, INCLUDE gives up after three
+loader with no `-9`, such as a plain `ogo run`, INCLUDE gives up after three
 seconds, saying so, the bytes of its request showing on the terminal.
 
 ## The P2 words

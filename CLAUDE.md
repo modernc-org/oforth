@@ -119,7 +119,9 @@ The files:
   object `eng`), research and not the Forth: it prints clocks, and its
   numbers are ASSESSMENT.md's. Re-run it after any change of `ogo`: the
   call from inline PASM into generated code works by the backend's
-  convention, not by its promise.
+  convention, not by its promise. Re-run with v1.0.0-rc.3 on 2026-10-29,
+  the same figures; it imports its `eng` by the module's path, rc.3
+  taking no bare `"eng"`.
 - `P2XCForthC.zip` and `forum/`: reference material the user downloaded and
   saved (Christof Eb.'s P2XCForth archive; six pages of the Parallax forum,
   which blocks fetching). Untracked, third parties' copyright, and never to
@@ -197,7 +199,8 @@ version` and the clock they were taken at, never from the estimates.
   `DIFFERENCES.md` the inventory, `_examples/spin2drivers` the Spin2 object
   example, and `CLAUDE.md` there has the board and loader troubleshooting.
 - `ogo` on PATH is installed by the user from `../ogo` (v0.58.1-0.20261025171618
-  on 2026-10-28) and may lag the tree or be ahead of what this file knows;
+  on 2026-10-28, v1.0.0-rc.3 on 2026-10-29, which has `ogo run -9 DIR`)
+  and may lag the tree or be ahead of what this file knows;
   do not install over it. A compiler fault is checked against the tree's
   compiler before it is reported, `(cd ../ogo && go build -o
   "$SCRATCH/ogo-head" .)`, and any compiler run on a suspect program goes
@@ -454,7 +457,7 @@ ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
 flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
 scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT and FILE tests on the board, INCLUDEd by 9P, half a minute; errors: 0
-ogo loadp2 -t -9 . -b 230400 oforth.binary       # the REPL with INCLUDE serving this directory (under the lock)
+ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes
 ```
