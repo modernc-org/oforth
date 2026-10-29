@@ -1,0 +1,1234 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"unsafe"
+)
+
+// The card's files: a FAT32 volume, the card's first partition or the whole
+// card, mounted when a name first reaches it, sd:NAME (file.ogo). A name is
+// found by its long name or its 8.3 one, regardless of case; a new file
+// gets an 8.3 name only if its name is one, in one case, the entry's case
+// bits keeping it small (as Linux and Windows do), and a long name besides
+// otherwise, its 8.3 name NAME~1.EXT. A long name's characters are taken
+// as Latin-1, so ASCII is what it is. A file is written through the block
+// it is in: a whole block straight, a part of one over what the block held.
+// The volume has no clock, so what is made is dated 1980-01-01, FAT's
+// first day. Every FAT is written when they are mirrors of each other, the
+// one in use only when they are not, and FSInfo's count of free clusters
+// is kept when it is known.
+//
+// What changes the volume does so in an order that a card taken out or a
+// board reset in the middle leaves it with clusters lost at worst, never
+// with a cluster in two files: a file's clusters are taken in the FAT
+// before its entry names them, and its entry lets go of them before the
+// FAT frees them.
+//
+// The code is written for its size, OctoGo checking every index and every
+// pointer: what a function reads of a file it reads once into locals, and
+// what a directory's entry holds is read in sec by its offset there.
+
+const (
+	fatEnd    = 0x0ffffff8 // a chain ends at a value from this on
+	fatMask   = 0x0fffffff // what of a FAT's entry is the cluster
+	fatNoFree = 0xffffffff // FSInfo's count of free clusters when unknown
+
+	attrRO   = 0x01
+	attrVol  = 0x08
+	attrDir  = 0x10
+	attrArch = 0x20
+	attrLFN  = 0x0f // a part of a long name, which is all four low bits
+
+	fatDay = 0x0021 // 1980-01-01, a date of FAT's
+
+	maxLong = 255
+
+	badChars   = "\"*/:<>?\\|"      // what no name on the card has
+	shortChars = "!#$%&'()-@^_`{}~" // and what an 8.3 one may have beside letters and digits
+)
+
+var (
+	volUp     bool
+	volGen    uint32 // counts the mounts: a file opened before the last one is lost
+	volFat    uint32 // the first block of the FAT read and written
+	volFatN   uint32 // a FAT's blocks
+	volCopies uint32 // how many FATs are written, volFatN apart
+	volData   uint32 // cluster 2's first block
+	volShift  uint32 // a cluster is 1<<volShift blocks
+	volClus   uint32 // the clusters are 2 to volClus-1
+	volRoot   uint32 // the root directory's first cluster
+	volInfo   uint32 // the FSInfo block, 0 when there is none
+	volFree   uint32 // how many clusters are free, or fatNoFree
+	volNext   uint32 // where a free one is looked for
+	volDirty  bool   // volFree or volNext changed
+
+	// A block of a directory, or of a file a part of which is written; it
+	// is dirty only with a directory's.
+	sec      [blockSize]byte
+	secAt    uint32
+	secValid bool
+	secDirty bool
+
+	// A block of the FAT, counted from volFat, its entries little-endian
+	// as the P2's longs.
+	fatBlk   [blockSize / 4]uint32
+	fatAt    uint32
+	fatValid bool
+	fatDirty bool
+
+	entry [32]byte      // the entry dirFind found, or the one dirAdd writes
+	long  [20 * 13]byte // a long name being read
+	nlong int
+)
+
+// A place in a directory: its cluster, and the entry's index in it.
+type dirPos struct {
+	clus, i uint32
+}
+
+// What dirFind found besides entry: where it is, where its first entry is,
+// the long name's or its own, and how many entries there are from there.
+var (
+	foundAt   dirPos
+	foundFrom dirPos
+	foundN    int
+	foundDir  uint32 // the directory cardFind looked in
+)
+
+// sec2 and sec4 read the little-endian numbers at i in sec, and setSec2 and
+// setSec4 write them; the P2 reads and writes a word or a long at any byte.
+func sec2(i int) uint32 { return uint32(*(*uint16)(unsafe.Pointer(&sec[i]))) }
+
+func sec4(i int) uint32 { return *(*uint32)(unsafe.Pointer(&sec[i])) }
+
+func setSec2(i int, v uint32) { *(*uint16)(unsafe.Pointer(&sec[i])) = uint16(v) }
+
+func setSec4(i int, v uint32) { *(*uint32)(unsafe.Pointer(&sec[i])) = v }
+
+// entryClus answers entry's first cluster, whose high half is at 20 and low
+// half at 26.
+func entryClus() uint32 {
+	return uint32(entry[26]) | uint32(entry[27])<<8 | uint32(entry[20])<<16 | uint32(entry[21])<<24
+}
+
+// blockRead and blockWrite are sdRead and sdWrite, a failure of which
+// unmounts the volume: the card may be another one when it is next asked.
+func blockRead(b uint32, p []byte) bool {
+	if !sdRead(b, p) {
+		volUp = false
+		return false
+	}
+	return true
+}
+
+func blockWrite(b uint32, p []byte) bool {
+	if !sdWrite(b, p) {
+		volUp = false
+		return false
+	}
+	return true
+}
+
+func secLoad(b uint32) bool {
+	if secValid && secAt == b {
+		return true
+	}
+	if !secFlush() {
+		return false
+	}
+	secValid = false
+	if !blockRead(b, sec[:]) {
+		return false
+	}
+	secAt, secValid = b, true
+	return true
+}
+
+func secFlush() bool {
+	if !secDirty {
+		return true
+	}
+	secDirty = false
+	return blockWrite(secAt, sec[:])
+}
+
+// secClear makes sec block b, all zeros, as if it were read.
+func secClear(b uint32) bool {
+	if !secFlush() {
+		return false
+	}
+	for i := range sec {
+		sec[i] = 0
+	}
+	secAt, secValid = b, true
+	return true
+}
+
+// volMount mounts the card's volume unless it is mounted.
+func volMount() bool {
+	if volUp {
+		return true
+	}
+	volGen++
+	secValid, secDirty, fatValid, fatDirty, volDirty = false, false, false, false, false
+	if !sdOpen() || !secLoad(0) {
+		return false
+	}
+	if volBPB(0) {
+		volUp = true
+		return true
+	}
+	// A partition table: the first FAT32 partition's.
+	for e := 0x1be; e < 0x1fe; e += 16 {
+		if t := sec[e+4]; t == 0x0b || t == 0x0c {
+			if start := sec4(e + 8); start != 0 && secLoad(start) && volBPB(start) {
+				volUp = true
+				return true
+			}
+			break
+		}
+	}
+	setNineErr("no FAT32 volume on the card")
+	return false
+}
+
+// volBPB takes the volume that starts at block start, whose first block sec
+// holds, answering whether it is one this code reads and writes.
+func volBPB(start uint32) bool {
+	spc := uint32(sec[13])
+	res := sec2(14)
+	nf := uint32(sec[16])
+	tot := sec2(19)
+	if tot == 0 {
+		tot = sec4(32)
+	}
+	fatN := sec4(36)
+	flags := sec2(40)
+	if sec2(510) != 0xaa55 || sec2(11) != blockSize || spc == 0 || spc&(spc-1) != 0 ||
+		res == 0 || nf == 0 || sec2(17) != 0 || sec2(22) != 0 || fatN == 0 || tot <= res+nf*fatN {
+		return false
+	}
+	volShift = 0
+	for 1<<volShift != spc {
+		volShift++
+	}
+	volFat, volFatN, volCopies = start+res, fatN, nf
+	if flags&0x80 != 0 {
+		// The FATs are no mirrors of each other: the one in use alone.
+		if flags&15 >= nf {
+			return false
+		}
+		volFat += (flags & 15) * fatN
+		volCopies = 1
+	}
+	volData = start + res + nf*fatN
+	volClus = (tot-res-nf*fatN)>>volShift + 2
+	if m := fatN * (blockSize / 4); volClus > m {
+		volClus = m
+	}
+	volRoot = sec4(44)
+	if !clusOK(volRoot) {
+		return false
+	}
+	volInfo, volFree, volNext = 0, fatNoFree, 2
+	if info := sec2(48); info != 0 && info < res && secLoad(start+info) &&
+		sec4(0) == 0x41615252 && sec4(484) == 0x61417272 {
+		volInfo = start + info
+		if volFree = sec4(488); volFree > volClus-2 {
+			volFree = fatNoFree
+		}
+		if volNext = sec4(492); !clusOK(volNext) {
+			volNext = 2
+		}
+	}
+	return true
+}
+
+func clusOK(c uint32) bool { return c >= 2 && c < volClus }
+
+func clusBlock(c uint32) uint32 { return volData + (c-2)<<volShift }
+
+func fatBytes() []byte {
+	return unsafe.Slice((*byte)(unsafe.Pointer(&fatBlk[0])), blockSize)
+}
+
+// fatLoad loads the block of the FAT that has c's entry; a c that is no
+// cluster is refused, so that nothing is ever written outside the FAT.
+func fatLoad(c uint32) bool {
+	if !clusOK(c) {
+		setNineErr("the card's FAT is damaged")
+		return false
+	}
+	b := c / (blockSize / 4)
+	if fatValid && fatAt == b {
+		return true
+	}
+	if !fatFlush() {
+		return false
+	}
+	fatValid = false
+	if !blockRead(volFat+b, fatBytes()) {
+		return false
+	}
+	fatAt, fatValid = b, true
+	return true
+}
+
+func fatFlush() bool {
+	if !fatDirty {
+		return true
+	}
+	fatDirty = false
+	for k := uint32(0); k < volCopies; k++ {
+		if !blockWrite(volFat+k*volFatN+fatAt, fatBytes()) {
+			return false
+		}
+	}
+	return true
+}
+
+func fatGet(c uint32) (uint32, bool) {
+	if !fatLoad(c) {
+		return 0, false
+	}
+	return fatBlk[c%(blockSize/4)] & fatMask, true
+}
+
+// fatSet sets c's entry, its four high bits, which are no part of it, kept.
+func fatSet(c, v uint32) bool {
+	if !fatLoad(c) {
+		return false
+	}
+	i := c % (blockSize / 4)
+	fatBlk[i] = fatBlk[i]&^fatMask | v&fatMask
+	fatDirty = true
+	return true
+}
+
+// clusNext answers the cluster after c in its chain, 0 at its end.
+func clusNext(c uint32) (uint32, bool) {
+	n, ok := fatGet(c)
+	switch {
+	case !ok:
+		return 0, false
+	case n >= fatEnd:
+		return 0, true
+	case !clusOK(n):
+		setNineErr("the card's FAT is damaged")
+		return 0, false
+	}
+	return n, true
+}
+
+// clusAlloc takes a free cluster, which ends its chain, and links it after
+// prev unless prev is 0.
+func clusAlloc(prev uint32) (uint32, bool) {
+	c := volNext
+	for k := uint32(2); k < volClus; k++ {
+		if !clusOK(c) {
+			c = 2
+		}
+		v, ok := fatGet(c)
+		if !ok {
+			return 0, false
+		}
+		if v == 0 {
+			if !fatSet(c, fatMask) || prev != 0 && !fatSet(prev, c) {
+				return 0, false
+			}
+			volNext = c + 1
+			if volFree != fatNoFree {
+				volFree--
+			}
+			volDirty = true
+			return c, true
+		}
+		c++
+	}
+	setNineErr("the card is full")
+	return 0, false
+}
+
+// clusFree frees the chain from c, 0 being none.
+func clusFree(c uint32) bool {
+	for k := uint32(2); c != 0; k++ {
+		if k == volClus {
+			setNineErr("the card's FAT is damaged")
+			return false
+		}
+		n, ok := clusNext(c)
+		if !ok || !fatSet(c, 0) {
+			return false
+		}
+		if volFree != fatNoFree {
+			volFree++
+		}
+		volDirty = true
+		c = n
+	}
+	return true
+}
+
+// clusZero writes zeros over cluster c, a directory's new one.
+func clusZero(c uint32) bool {
+	b := clusBlock(c)
+	for k := uint32(0); k < 1<<volShift; k++ {
+		if !secClear(b+k) || !blockWrite(b+k, sec[:]) {
+			secValid = false
+			return false
+		}
+	}
+	return true
+}
+
+// volSync writes what the caches hold and FSInfo's counts.
+func volSync() bool {
+	if !fatFlush() || !secFlush() {
+		return false
+	}
+	if !volDirty || volInfo == 0 {
+		volDirty = false
+		return true
+	}
+	if !secLoad(volInfo) {
+		return false
+	}
+	setSec4(488, volFree)
+	setSec4(492, volNext)
+	secDirty = true
+	volDirty = false
+	return secFlush()
+}
+
+// dirEntry loads the block of the i-th entry of a directory's cluster clus
+// and answers the entry's offset in sec.
+func dirEntry(clus, i uint32) (int, bool) {
+	return int(i%16) * 32, secLoad(clusBlock(clus) + i/16)
+}
+
+// dirNext answers the entry after the i-th of cluster clus in its directory,
+// and 1, or the same entry and 0 at the end of the directory's chain, or -1.
+func dirNext(clus, i uint32) (uint32, uint32, int) {
+	if i++; i < 16<<volShift {
+		return clus, i, 1
+	}
+	n, ok := clusNext(clus)
+	switch {
+	case !ok:
+		return clus, i - 1, -1
+	case n == 0:
+		return clus, i - 1, 0
+	}
+	return n, 0, 1
+}
+
+// Where a long name's thirteen characters are in an entry of it.
+var lfnAt = [13]uint8{1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30}
+
+// dirFind looks for name in the directory whose first cluster is dir, and
+// answers 1 when it is there, in entry and found..., 0 when it is not, or
+// -1.
+func dirFind(dir uint32, name []byte) int {
+	clus, i := dir, uint32(0)
+	fromC, fromI := clus, i
+	ord, n := 0, 0 // the part of a long name expected next, and how many came
+	sum := byte(0)
+	for {
+		o, ok := dirEntry(clus, i)
+		if !ok {
+			return -1
+		}
+		c, a := sec[o], sec[o+11]
+		switch {
+		case c == 0:
+			return 0
+		case c == 0xe5:
+			ord = 0
+		case a&0x3f == attrLFN:
+			k := int(c & 0x3f)
+			switch {
+			case c&0x40 != 0 && k >= 1 && k <= 20:
+				ord, sum, fromC, fromI, n = k, sec[o+13], clus, i, 0
+				nlong = k * 13
+			case ord > 1 && k == ord-1 && sec[o+13] == sum:
+				ord = k
+			default:
+				ord = 0
+			}
+			if ord == 0 {
+				break
+			}
+			x := (k - 1) * 13
+			for _, at := range lfnAt {
+				switch v := sec2(o + int(at)); {
+				case v == 0:
+					if x < nlong {
+						nlong = x
+					}
+				case v < 256:
+					long[x] = byte(v)
+				default:
+					long[x] = '?'
+				}
+				x++
+			}
+			n++
+		default:
+			hasLong := ord == 1 && sum == shortSum(sec[o:o+11])
+			if a&attrVol == 0 && (hasLong && sameFold(long[:nlong], name) || shortIs(o, name)) {
+				foundAt = dirPos{clus, i}
+				foundFrom, foundN = foundAt, 1
+				if hasLong {
+					foundFrom, foundN = dirPos{fromC, fromI}, n+1
+				}
+				copy(entry[:], sec[o:o+32])
+				return 1
+			}
+			ord = 0
+		}
+		var r int
+		if clus, i, r = dirNext(clus, i); r <= 0 {
+			return r
+		}
+	}
+}
+
+// shortIs answers whether the 8.3 name of the entry at o in sec is name,
+// regardless of case.
+func shortIs(o int, name []byte) bool {
+	var s [12]byte
+	k := 8
+	for k > 0 && sec[o+k-1] == ' ' {
+		k--
+	}
+	copy(s[:], sec[o:o+k])
+	if k > 0 && s[0] == 0x05 {
+		s[0] = 0xe5
+	}
+	x := 11
+	for x > 8 && sec[o+x-1] == ' ' {
+		x--
+	}
+	if x > 8 {
+		s[k] = '.'
+		k++
+		k += copy(s[k:], sec[o+8:o+x])
+	}
+	return sameFold(s[:k], name)
+}
+
+func sameFold(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if upper(a[i]) != upper(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// shortSum is the checksum of an 8.3 name, which its long name's entries
+// carry.
+func shortSum(e []byte) byte {
+	s := byte(0)
+	for _, c := range e {
+		s = (s>>1 | s<<7) + c
+	}
+	return s
+}
+
+// volWalk finds the directory the last part of path is in, and answers it
+// and that part.
+func volWalk(path []byte) (uint32, []byte, bool) {
+	dir := volRoot
+	for {
+		for len(path) > 0 && path[0] == '/' {
+			path = path[1:]
+		}
+		i := 0
+		for i < len(path) && path[i] != '/' {
+			i++
+		}
+		if i == len(path) {
+			return dir, path, true
+		}
+		switch dirFind(dir, path[:i]) {
+		case -1:
+			return 0, nil, false
+		case 0:
+			setNineErr("no such directory")
+			return 0, nil, false
+		}
+		if entry[11]&attrDir == 0 {
+			setNineErr("not a directory")
+			return 0, nil, false
+		}
+		if dir = entryClus(); dir == 0 {
+			dir = volRoot // the .. of a directory in the root
+		}
+		path = path[i:]
+	}
+}
+
+// cardFind mounts the volume and finds the file path in it.
+func cardFind(path []byte) bool {
+	if !volMount() {
+		return false
+	}
+	dir, name, ok := volWalk(path)
+	if !ok {
+		return false
+	}
+	foundDir = dir
+	if len(name) == 0 {
+		setNineErr("a file name is missing")
+		return false
+	}
+	switch dirFind(dir, name) {
+	case -1:
+		return false
+	case 0:
+		setNineErr("no such file")
+		return false
+	}
+	return true
+}
+
+// nameOK answers whether a file on the card can be named name.
+func nameOK(name []byte) bool {
+	if len(name) == 0 || len(name) > maxLong {
+		return false
+	}
+	if c := name[len(name)-1]; c == '.' || c == ' ' {
+		return false
+	}
+	for _, c := range name {
+		if c < ' ' || c == 0x7f {
+			return false
+		}
+		for i := 0; i < len(badChars); i++ {
+			if c == badChars[i] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// shortFits makes entry's name the 8.3 name that name is, if it is one in
+// one case, and answers the entry's case bits for it: 0x08 its base in lower
+// case, 0x10 its extension.
+func shortFits(name []byte) (byte, bool) {
+	dot := -1
+	for i, c := range name {
+		if c == '.' {
+			if dot >= 0 {
+				return 0, false
+			}
+			dot = i
+		}
+	}
+	base, ext := name, name[:0]
+	if dot >= 0 {
+		base, ext = name[:dot], name[dot+1:]
+	}
+	if len(base) == 0 || len(base) > 8 || len(ext) > 3 {
+		return 0, false
+	}
+	lb, ok := shortCase(base)
+	if !ok {
+		return 0, false
+	}
+	le, ok := shortCase(ext)
+	if !ok {
+		return 0, false
+	}
+	for i := 0; i < 11; i++ {
+		entry[i] = ' '
+	}
+	for i, c := range base {
+		entry[i] = upper(c)
+	}
+	for i, c := range ext {
+		entry[8+i] = upper(c)
+	}
+	return lb<<3 | le<<4, true
+}
+
+// shortCase answers 1 if s has small letters, and whether it is in one case
+// and of characters an 8.3 name may have.
+func shortCase(s []byte) (byte, bool) {
+	lo, up := byte(0), false
+	for _, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z':
+			lo = 1
+		case c >= 'A' && c <= 'Z':
+			up = true
+		case !shortChar(c):
+			return 0, false
+		}
+	}
+	return lo, lo == 0 || !up
+}
+
+// shortChar answers whether an 8.3 name may have c, a letter aside.
+func shortChar(c byte) bool {
+	if c >= '0' && c <= '9' {
+		return true
+	}
+	for i := 0; i < len(shortChars); i++ {
+		if c == shortChars[i] {
+			return true
+		}
+	}
+	return false
+}
+
+// shortAlias makes entry's name an 8.3 name for name that dir has not: what
+// of name an 8.3 name may have, in upper case, with ~1, or ~2 and so on.
+func shortAlias(dir uint32, name []byte) bool {
+	dot := len(name)
+	for i := len(name) - 1; i > 0; i-- {
+		if name[i] == '.' {
+			dot = i
+			break
+		}
+	}
+	for i := 0; i < 11; i++ {
+		entry[i] = ' '
+	}
+	nb := 0
+	for _, c := range name[:dot] {
+		if nb < 8 && c != ' ' && c != '.' {
+			entry[nb] = aliasChar(c)
+			nb++
+		}
+	}
+	if nb == 0 {
+		entry[0] = '_'
+		nb = 1
+	}
+	var basis [8]byte
+	copy(basis[:], entry[:8])
+	x := 8
+	for _, c := range name[min(dot+1, len(name)):] {
+		if x < 11 && c != ' ' && c != '.' {
+			entry[x] = aliasChar(c)
+			x++
+		}
+	}
+	var d [8]byte
+	for k := uint32(1); k < 1000000; k++ {
+		i := len(d)
+		for v := k; v != 0; v /= 10 {
+			i--
+			d[i] = byte('0' + v%10)
+		}
+		i--
+		d[i] = '~'
+		m := min(nb, i)
+		copy(entry[:], basis[:m])
+		copy(entry[m:8], d[i:])
+		switch dirShort(dir) {
+		case -1:
+			return false
+		case 0:
+			return true
+		}
+	}
+	setNineErr("no 8.3 name is left")
+	return false
+}
+
+func aliasChar(c byte) byte {
+	if c = upper(c); c >= 'A' && c <= 'Z' || shortChar(c) {
+		return c
+	}
+	return '_'
+}
+
+// dirShort answers 1 if the directory dir has an entry of entry's 8.3 name,
+// 0 if not, or -1.
+func dirShort(dir uint32) int {
+	clus, i := dir, uint32(0)
+	for {
+		o, ok := dirEntry(clus, i)
+		if !ok {
+			return -1
+		}
+		c := sec[o]
+		if c == 0 {
+			return 0
+		}
+		if c != 0xe5 && sec[o+11]&0x3f != attrLFN && bytesEq(sec[o:o+11], entry[:11]) {
+			return 1
+		}
+		var r int
+		if clus, i, r = dirNext(clus, i); r <= 0 {
+			return r
+		}
+	}
+}
+
+// newEntry makes entry a file's with no clusters, which dirAdd names.
+func newEntry() {
+	for i := range entry {
+		entry[i] = 0
+	}
+	entry[11] = attrArch
+	entry[16], entry[18], entry[24] = fatDay, fatDay, fatDay // made, read, written
+}
+
+// dirAdd writes entry, named name, into the directory dir, with entries of
+// its long name before it if it needs one, and sets foundAt to where it is.
+func dirAdd(dir uint32, name []byte) bool {
+	if !nameOK(name) {
+		setNineErr("a name the card cannot have")
+		return false
+	}
+	nt, fits := shortFits(name)
+	n := 0
+	if !fits {
+		nt = 0
+		n = (len(name) + 12) / 13
+		if !shortAlias(dir, name) {
+			return false
+		}
+	}
+	entry[12] = nt
+	sum := shortSum(entry[:11])
+
+	// n+1 free entries in a row, a new cluster of the directory if need be.
+	clus, i := dir, uint32(0)
+	sc, si := clus, i
+	for run := 0; ; {
+		o, ok := dirEntry(clus, i)
+		if !ok {
+			return false
+		}
+		if c := sec[o]; c == 0 || c == 0xe5 {
+			if run == 0 {
+				sc, si = clus, i
+			}
+			if run++; run == n+1 {
+				break
+			}
+		} else {
+			run = 0
+		}
+		var r int
+		switch clus, i, r = dirNext(clus, i); r {
+		case -1:
+			return false
+		case 0:
+			c, ok := clusAlloc(clus)
+			if !ok || !clusZero(c) {
+				return false
+			}
+			clus, i = c, 0
+		}
+	}
+
+	// The long name's entries, its last part first.
+	clus, i = sc, si
+	for k := n; k >= 1; k-- {
+		o, ok := dirEntry(clus, i)
+		if !ok {
+			return false
+		}
+		sec[o] = byte(k)
+		if k == n {
+			sec[o] |= 0x40
+		}
+		sec[o+11], sec[o+12], sec[o+13] = attrLFN, 0, sum
+		setSec2(o+26, 0)
+		x := (k - 1) * 13
+		for _, at := range lfnAt {
+			v := uint32(0xffff)
+			if x < len(name) {
+				v = uint32(name[x])
+			} else if x == len(name) {
+				v = 0
+			}
+			setSec2(o+int(at), v)
+			x++
+		}
+		secDirty = true
+		var r int
+		if clus, i, r = dirNext(clus, i); r <= 0 {
+			return false
+		}
+	}
+	o, ok := dirEntry(clus, i)
+	if !ok {
+		return false
+	}
+	copy(sec[o:o+32], entry[:])
+	secDirty = true
+	foundAt = dirPos{clus, i}
+	return fatFlush() && secFlush()
+}
+
+// dirDel marks n entries from p deleted.
+func dirDel(p dirPos, n int) bool {
+	clus, i := p.clus, p.i
+	for {
+		o, ok := dirEntry(clus, i)
+		if !ok {
+			return false
+		}
+		sec[o] = 0xe5
+		secDirty = true
+		if n--; n == 0 {
+			return secFlush()
+		}
+		var r int
+		if clus, i, r = dirNext(clus, i); r <= 0 {
+			return false
+		}
+	}
+}
+
+// cardOpenAt answers whether a file of the card other than f has the entry
+// at p open, and if so, whether for writing.
+func cardOpenAt(f int, p dirPos) (bool, bool) {
+	open, writing := false, false
+	for k := range files {
+		fl := &files[k]
+		if k != f && fl.open && fl.card && fl.gen == volGen && fl.ent == p {
+			open = true
+			writing = writing || fl.mode != famRO
+		}
+	}
+	return open, writing
+}
+
+// cardOpen opens path on the card as f, in mode, creating the file or
+// emptying it when create is set.
+func cardOpen(f int, path []byte, mode uint32, create bool) bool {
+	if !volMount() {
+		return false
+	}
+	dir, name, ok := volWalk(path)
+	if !ok {
+		return false
+	}
+	if len(name) == 0 {
+		setNineErr("a file name is missing")
+		return false
+	}
+	switch dirFind(dir, name) {
+	case -1:
+		return false
+	case 0:
+		if !create {
+			setNineErr("no such file")
+			return false
+		}
+		newEntry()
+		if !dirAdd(dir, name) {
+			return false
+		}
+	default:
+		a := entry[11]
+		if a&attrDir != 0 {
+			setNineErr("a directory")
+			return false
+		}
+		if a&attrRO != 0 && (mode != famRO || create) {
+			setNineErr("the file is read-only")
+			return false
+		}
+		if open, writing := cardOpenAt(f, foundAt); writing || open && (mode != famRO || create) {
+			setNineErr("the file is open")
+			return false
+		}
+	}
+	first := entryClus()
+	size := uint32(entry[28]) | uint32(entry[29])<<8 | uint32(entry[30])<<16 | uint32(entry[31])<<24
+	empty := create && (first != 0 || size != 0)
+	if empty {
+		first, size = 0, 0
+	}
+	fl := &files[f]
+	fl.card, fl.gen, fl.ent = true, volGen, foundAt
+	fl.first, fl.size, fl.clus, fl.cidx, fl.synced = first, size, 0, 0, !empty
+	return !empty || cardEntry(f) && clusFree(entryClus()) && volSync()
+}
+
+// cardLive answers whether f's volume is still the one mounted.
+func cardLive(f int) bool {
+	if !volUp || files[f].gen != volGen {
+		setNineErr("the card failed or was changed")
+		return false
+	}
+	return true
+}
+
+// cardEntry writes f's first cluster and size into its entry.
+func cardEntry(f int) bool {
+	fl := &files[f]
+	if fl.synced {
+		return true
+	}
+	first, size := fl.first, fl.size
+	o, ok := dirEntry(fl.ent.clus, fl.ent.i)
+	if !ok {
+		return false
+	}
+	setSec2(o+20, first>>16)
+	setSec2(o+26, first)
+	setSec4(o+28, size)
+	sec[o+11] |= attrArch
+	secDirty = true
+	if !secFlush() {
+		return false
+	}
+	fl.synced = true
+	return true
+}
+
+// cardSync makes the volume say what was written to f: its clusters in the
+// FAT, then its entry.
+func cardSync(f int) bool {
+	return cardLive(f) && fatFlush() && cardEntry(f) && volSync()
+}
+
+// cardBlock answers the block of f that holds byte off, taking clusters for
+// it when grow is set, and keeps the cluster it is in as f's clus.
+func cardBlock(f int, off uint32, grow bool) (uint32, bool) {
+	fl := &files[f]
+	first, clus, ci := fl.first, fl.clus, fl.cidx
+	want := off >> (9 + volShift)
+	if clus == 0 || ci > want {
+		if first == 0 {
+			if !grow {
+				setNineErr("the file has no clusters")
+				return 0, false
+			}
+			c, ok := clusAlloc(0)
+			if !ok {
+				return 0, false
+			}
+			first = c
+			fl.first, fl.synced = c, false
+		}
+		clus, ci = first, 0
+	}
+	for ci < want {
+		n, ok := clusNext(clus)
+		if !ok {
+			return 0, false
+		}
+		if n == 0 {
+			if !grow {
+				setNineErr("the file's chain is short")
+				return 0, false
+			}
+			if n, ok = clusAlloc(clus); !ok {
+				return 0, false
+			}
+		}
+		clus = n
+		ci++
+	}
+	fl.clus, fl.cidx = clus, ci
+	return clusBlock(clus) + (off>>9)&(1<<volShift-1), true
+}
+
+// cardRead reads into p, which is blockSize bytes, what f has from off on
+// in off's block, and answers how much, 0 at the file's end, or -1.
+func cardRead(f int, off uint32, p []byte) int {
+	if !cardLive(f) {
+		return -1
+	}
+	size := files[f].size
+	if off >= size {
+		return 0
+	}
+	b, ok := cardBlock(f, off, false)
+	if !ok {
+		return -1
+	}
+	o := int(off % blockSize)
+	n := int(minU(blockSize-uint32(o), size-off))
+	if o == 0 && len(p) >= blockSize && !(secValid && secAt == b) {
+		if !blockRead(b, p[:blockSize]) {
+			return -1
+		}
+		return n
+	}
+	if !secLoad(b) {
+		return -1
+	}
+	return copy(p, sec[o:o+n])
+}
+
+// cardPut writes n bytes of p, or zeros when p is nil, to f at off, as many
+// as go into off's block, and answers how many, or -1.
+func cardPut(f int, off uint32, p []byte, n int) int {
+	b, ok := cardBlock(f, off, true)
+	if !ok {
+		return -1
+	}
+	fl := &files[f]
+	size := fl.size
+	o := int(off % blockSize)
+	n = min(n, blockSize-o)
+	if n == blockSize && p != nil {
+		if secValid && secAt == b {
+			secValid = false
+		}
+		if !blockWrite(b, p[:n]) {
+			return -1
+		}
+	} else {
+		if n == blockSize || off-uint32(o) >= size {
+			// Nothing of what the block holds is the file's.
+			if !secClear(b) {
+				return -1
+			}
+		} else if !secLoad(b) {
+			return -1
+		}
+		if p != nil {
+			copy(sec[o:o+n], p)
+		} else {
+			for i := o; i < o+n; i++ {
+				sec[i] = 0
+			}
+		}
+		if !blockWrite(b, sec[:]) {
+			secValid = false
+			return -1
+		}
+	}
+	if e := off + uint32(n); e > size {
+		fl.size, fl.synced = e, false
+	}
+	return n
+}
+
+// cardGrow writes zeros to f from its end to to.
+func cardGrow(f int, to uint32) bool {
+	for {
+		size := files[f].size
+		if size >= to {
+			return true
+		}
+		if cardPut(f, size, nil, int(minU(to-size, blockSize))) < 0 {
+			return false
+		}
+	}
+}
+
+// cardWrite writes what of p goes into off's block to f at off, zeros first
+// from the file's end to off, and answers how much of p it wrote, or -1.
+func cardWrite(f int, off uint32, p []byte) int {
+	if !cardLive(f) || !cardGrow(f, off) {
+		return -1
+	}
+	return cardPut(f, off, p, len(p))
+}
+
+func minU(a, b uint32) uint32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// cardResize makes f size bytes long.
+func cardResize(f int, size uint32) bool {
+	if !cardLive(f) || !cardGrow(f, size) {
+		return false
+	}
+	fl := &files[f]
+	if fl.size == size {
+		return cardSync(f)
+	}
+	// The clusters size needs are kept, the entry let go of the others
+	// before they are freed.
+	rest, last := fl.first, uint32(0)
+	if size != 0 {
+		if _, ok := cardBlock(f, size-1, false); !ok {
+			return false
+		}
+		last = fl.clus
+		n, ok := clusNext(last)
+		if !ok {
+			return false
+		}
+		rest = n
+	} else {
+		fl.first, fl.clus, fl.cidx = 0, 0, 0
+	}
+	fl.size, fl.synced = size, false
+	if !fatFlush() || !cardEntry(f) || last != 0 && rest != 0 && !fatSet(last, fatMask) {
+		return false
+	}
+	return clusFree(rest) && volSync()
+}
+
+// cardStatus answers the 9P mode of the file path on the card.
+func cardStatus(path []byte) (uint32, bool) {
+	if !cardFind(path) {
+		return 0, false
+	}
+	a := entry[11]
+	m := uint32(0x1a4) // 0644
+	if a&attrDir != 0 {
+		m = dmDir | 0x1ed // 0755
+	}
+	if a&attrRO != 0 {
+		m &^= 0x92 // 0222
+	}
+	return m, true
+}
+
+// cardDelete removes the file path from the card.
+func cardDelete(path []byte) bool {
+	if !cardFind(path) {
+		return false
+	}
+	if entry[11]&attrDir != 0 {
+		setNineErr("a directory")
+		return false
+	}
+	if open, _ := cardOpenAt(-1, foundAt); open {
+		setNineErr("the file is open")
+		return false
+	}
+	return dirDel(foundFrom, foundN) && clusFree(entryClus()) && volSync()
+}
+
+// cardRename renames the file from on the card to, a name in the same
+// directory: its entries are written under the new name before the old ones
+// are deleted.
+func cardRename(from, to []byte) bool {
+	if !cardFind(from) {
+		return false
+	}
+	at, start, n, dir := foundAt, foundFrom, foundN, foundDir
+	if open, _ := cardOpenAt(-1, at); open {
+		setNineErr("the file is open")
+		return false
+	}
+	name := to[lastSlash(to)+1:]
+	switch dirFind(dir, name) {
+	case -1:
+		return false
+	case 1:
+		// The same file, as it may be when only the case changes, and
+		// entry is what it was.
+		if foundAt != at {
+			setNineErr("the name is taken")
+			return false
+		}
+	}
+	return dirAdd(dir, name) && dirDel(start, n) && volSync()
+}

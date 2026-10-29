@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-seven tests by M3); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-eight tests with the card's); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -43,7 +43,22 @@ buffer held when `BACKUP FLASH` saved it, the boot reading none when the
 slot is empty: p2-11's card until the flash was written again that night
 with the slot empty, and since then TAQOZ's author's, the ID in the image
 as it ships. `../p2-11` and `../obeam` have a note of it,
-`HANDOFF-oforth-2026-10-29.md`. Next is M3 (the P2 words, RUN, the
+`HANDOFF-oforth-2026-10-29.md`. Another card went in the same evening
+for the file layer, the user's 4 GB one, used before for obeam: SDHC,
+7,680,000 blocks, one FAT32 partition from block 8192 made by mkfs.fat,
+8 blocks a cluster, and in its root `_BOOT_P2.BIX`, 504,844 bytes in one
+piece from cluster 3, an obeam program `obeam -sd` wrote, which stays
+as it is (the user's word: OctoForth writes in the card's root and
+leaves that file alone). Every block in use was copied to the host
+before the first write, in a scratch directory, and a FAT32 image built
+of it, which `fsck.fat -n` passed; the card is judged so after every
+change of the FAT code (dump, image, `fsck.fat -n`, `mdir`), there
+being no tool on the board for it. A bug of a first version, the halves
+of a first cluster swapped, lost four clusters that night and nothing
+else; the card was mended from the host, `fsck.fat` passing again, and
+`fatLoad` since refuses a cluster that is not one, so that nothing is
+written outside the FAT. TAQOZ still boots from flash with the card in,
+saying "ERROR - INVALID PARTITION" of it. Next is M3 (the P2 words, RUN, the
 embedding API) or M4 (speed: inlining, tail calls, the LUT cache), the
 user's to choose; the user chose M4, begun the same night: inlining, tail
 calls and FILL in PASM done, then the loop cache (the user's "LUT cache",
@@ -66,8 +81,10 @@ the embedding API, `Define`, `Push` and `Pop` (the user's choice of
 2026-10-29) and `Serial`, with `example/`, M3 done; then CATCH and
 THROW, the EXCEPTION word set, the suite's `exceptiontest.fth`
 passing; then the DOUBLE and STRING word sets, `doubletest.fth` and
-`stringtest.fth` passing. Next: the SD card behind the file layer when a
-card is back. Not yet: a host twin. The repository is on
+`stringtest.fth` passing; then the SD card behind the file layer, the
+same night, a name after `sd:` being the card's (the user's choices of
+2026-10-29 below), `scripts/f2012.sh -sd` running `filetest.fth` on the
+card with 0 errors. Next is the user's to choose. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -183,6 +200,14 @@ section 9 has the reasons:
   2026-10-29, the card being out of the slot). The serial line's way is
   9P, which the loader `ogo` embeds serves with `-9 DIR`, so that no host
   program of OctoForth's own is needed.
+- The SD card, the user's choices of 2026-10-29, all as proposed: a name
+  after `sd:` (or `SD:`) is the card's and any other the host's, so that
+  Forth code copies a file from the host onto the card with both open;
+  long names read and written; OctoForth writes on the card in the slot,
+  in its root, obeam's `_BOOT_P2.BIX` left alone, after the blocks in use
+  were copied to the host; and the driver is p2-11's `sd` made this
+  package's functions, with a line saying so, `forth/` having to stay one
+  directory that imports nothing of another module.
 
 The bar is P2XCForth's XBYTE core, not TAQOZ: section 3.6's table has the
 clocks per operation of all three. M2 runs the Byte sieve, the empty loop
@@ -329,11 +354,12 @@ All measured or read in this session and recorded with their sources in
   after `octoException`); `string.ogo` the STRING word set, the
   substitutions of REPLACES in `subs`, 256 bytes (`octoString`, after
   `octoDouble`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
-  `Serial`; `eng.ogo` and `eng.spin2` the engine, above.
+  `Serial`; `sd.ogo` the SD card's blocks and `fat.ogo` its FAT32 volume,
+  under the file layer; `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
   written and not yet sent (`dirty`), `off` where in the file it starts
-  and `pos` where the file is, the layer the SD card is to come behind
+  and `pos` where the file is, the layer the SD card is behind too
   (`fileOpen`, `fileByte`, `fileWrite`, `fileSeek`, `fileFlush`,
   `fileClose`, `fileSize`, ...); a fileid is the place plus one, its 9P
   fid the place plus two, and `nineTemp` the fid of DELETE-FILE's,
@@ -356,6 +382,32 @@ All measured or read in this session and recorded with their sources in
   `TestInclude` and `TestFile` serve the client from a 9P server of
   their own in the test, through `Key` and `Avail`, one file of which can
   be written.
+- **The card** (`sd.ogo`, `fat.ogo`): a name after `sd:` goes to the card
+  (`cardName`), and a file of it keeps in the table its first cluster,
+  its size, the cluster it was last in (`clus`, the `cidx`-th), where its
+  entry is (`ent`) and whether the entry says the first two (`synced`);
+  `backRead` and `backWrite` are the 9P read and write or `cardRead` and
+  `cardWrite`, a block's worth at a time, and `fileSync`, CLOSE-FILE's and
+  FLUSH-FILE's, writes the FAT and then the entry. The volume is mounted
+  when a name first reaches it (`volMount`), and again after a block
+  could not be read or written, `volGen` counting the mounts so that a
+  file opened before is refused. `sec` is the one block cache, of a
+  directory's block, which may be dirty, or a file's being patched, which
+  is written through; `fatBlk` the FAT's, written to every FAT that
+  mirrors the first. A name is found by its long name or its 8.3 one,
+  regardless of case (`dirFind`, `entry` and `found...` what it found);
+  `dirAdd` writes an 8.3 name in one case with the entry's case bits, or
+  a long name and an alias NAME~1.EXT (`shortFits`, `shortAlias`). Every
+  change is ordered so that a reset loses clusters at worst and never
+  puts one in two files (fat.ogo's header comment). An open file is not
+  deleted, renamed or opened again for writing (`cardOpenAt`). The code is
+  written for its size: OctoGo checks every pointer and index, so a
+  function reads a file's fields into locals once and an entry by its
+  offset in `sec` (`sec2`, `sec4`, unaligned, which the P2 reads), and it
+  is still about 20 KB, 27 KB of hub RAM with its data. The pins are
+  P58-P61, the flash's too: the card's traffic never gives the flash a
+  whole byte (sd.ogo's header comment). `TestCard` runs on the card in
+  the slot, passing with a note when the slot is empty.
 - **The input source** is `src`, a slice over `tib` or over what EVALUATE
   was given, `srcAddr` where it is, and `>IN` a data-space cell
   (`cellToIn`); `parse`, `parseName` and `skip` read it. EVALUATE saves and
@@ -493,6 +545,7 @@ ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
 flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
 scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE and STRING tests on the board, INCLUDEd by 9P, a minute; errors: 0
+scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes

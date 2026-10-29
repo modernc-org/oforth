@@ -90,6 +90,35 @@ file may go on over lines. Under a
 loader with no `-9`, such as a plain `ogo run`, INCLUDE gives up after three
 seconds, saying so, the bytes of its request showing on the terminal.
 
+A name after `sd:` is a file on the SD card in the board's slot, a FAT32
+volume, the card's first partition or the whole card, and every FILE
+word works there as on the host, long names too, found regardless of
+case:
+
+```
+INCLUDE sd:app.fth
+```
+
+With the loader's `-9` the host's files and the card's are open at once,
+so a file goes onto the card without the card coming out:
+
+```
+CREATE CB 512 ALLOT  0 VALUE IN  0 VALUE OUT
+: COPY ( a1 u1 a2 u2 -- ) W/O CREATE-FILE THROW TO OUT  R/O OPEN-FILE THROW TO IN
+  BEGIN CB 512 IN READ-FILE THROW ?DUP WHILE CB SWAP OUT WRITE-FILE THROW REPEAT
+  IN CLOSE-FILE THROW  OUT CLOSE-FILE THROW ;
+S" bench/oforth.fth" S" sd:bench.fth" COPY
+```
+
+The card is driven pin by pin, as p2-11 drives it, a block read in
+1.43 ms at 160 MHz. A file written past its end has zeros up to where
+it was written; one open is neither deleted, renamed nor opened for
+writing again; `RENAME-FILE` renames within a directory, as on the
+host, and no directory is made, the FILE word set having no word for
+it. The board has no clock, so what OctoForth writes is dated
+1980-01-01. The Forth-2012 suite's FILE tests pass on the card too
+(`scripts/f2012.sh -sd`).
+
 ## The P2 words
 
 The P2's pins, smart pins, clocks, locks and LUT are words named after

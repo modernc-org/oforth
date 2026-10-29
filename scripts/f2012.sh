@@ -10,11 +10,19 @@
 # errors, which must be 0. The suite is fetched at a pinned commit into
 # build/f2012, checked by its hashes, and never committed: its files carry
 # their own notices. It takes the board lock itself; the run takes about
-# half a minute.
+# half a minute. With -sd, the FILE tests run on the SD card in the slot
+# instead of in build/f2012, from a copy of filetest.fth whose three names
+# are sd:'s, which the script prints (not both: REQUIRED would find the
+# second run's files included by the first).
 #
-# Usage: scripts/f2012.sh [PORT]
+# Usage: scripts/f2012.sh [-sd] [PORT]
 
 set -eu
+sd=filetest.fth
+if [ "${1:-}" = -sd ]; then
+	sd=sdfiletest.fth
+	shift
+fi
 port=${1:-/dev/ttyUSB0}
 commit=4c87e5659c5b79bd7a6664daa56603df080c6f9b
 dir=build/f2012
@@ -36,6 +44,10 @@ b09d273fb8a8afa1438c6f8bc0a43a66e02a171d6f9e0d413c8777c58e126ba3 required-helper
 28d769b65563b6df8085a1bc5c2a36e8cc2bfffe8d6040167079d7c0e1fc37ee doubletest.fth
 6f78aafab33acf2c3e09ec428447d539e2f8afe71fa3ca2ed329b2999b129cde stringtest.fth
 SUMS
+if [ $sd != filetest.fth ]; then
+	sed 's/S" \(fatest\|FATEST\)/S" sd:\1/' $dir/filetest.fth > $dir/$sd
+	diff $dir/filetest.fth $dir/$sd | grep '^>' || true
+fi
 ogo build -o $dir/oforth.binary .
 # Each file is INCLUDEd by a line of its own, so that an error stops only
 # that file, core.fr's test of ACCEPT taking the line after its own; the
@@ -48,7 +60,7 @@ flock -o -w 900 /tmp/p2-board.lock sh -c "
 	fuser -s $port && { echo 'port busy'; exit 1; }
 	(sleep 4
 	printf 'INCLUDE tester.fr\\rINCLUDE core.fr\\rtyped for ACCEPT\\r'
-	for f in coreplustest.fth utilities.fth coreexttest.fth filetest.fth exceptiontest.fth doubletest.fth stringtest.fth; do printf 'INCLUDE %s\\r' \$f; done
+	for f in coreplustest.fth utilities.fth coreexttest.fth $sd exceptiontest.fth doubletest.fth stringtest.fth; do printf 'INCLUDE %s\\r' \$f; done
 	printf 'DECIMAL CR .( errors: ) #ERRORS @ .\\r'
 	for i in \$(seq 240); do grep -q -a 'errors: [0-9]' $dir/raw.txt 2>/dev/null && break; sleep 0.5; done
 	sleep 1; printf '\\035') |

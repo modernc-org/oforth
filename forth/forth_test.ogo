@@ -1074,3 +1074,42 @@ func TestFile(t *testing.T) {
 	Key = nil
 	Avail = nil
 }
+
+// TestCard runs the file words on the SD card in the slot, in files of its
+// own, which it deletes. A board with no card in the slot passes, saying
+// that nothing was tested.
+func TestCard(t *testing.T) {
+	if !sdOpen() {
+		println("no card in the slot, and nothing tested")
+		return
+	}
+	check(t, "S\" sd:OctoForth Test.text\" DELETE-FILE DROP S\" sd:oftest2.txt\" DELETE-FILE DROP", "")
+	check(t, "S\" sd:oftest1.txt\" W/O CREATE-FILE . VALUE cw", "0 ")
+	check(t, "S\" hello\" cw WRITE-LINE . S\" world\" cw WRITE-FILE . cw FILE-POSITION . . . cw CLOSE-FILE .", "0 0 0 0 11 0 ")
+	check(t, "S\" SD:OFTEST1.TXT\" R/O OPEN-FILE . VALUE cr PAD 80 cr READ-LINE . . PAD SWAP TYPE", "0 0 -1 hello")
+	check(t, "cr FILE-SIZE . . . S\" x\" cr WRITE-FILE . cr CLOSE-FILE .", "0 0 11 -37 0 ")
+	check(t, "S\" sd:oftest1.txt\" R/W OPEN-FILE . VALUE cb 6 0 cb REPOSITION-FILE . S\" W\" cb WRITE-FILE . 0 0 cb REPOSITION-FILE . PAD 80 cb READ-FILE . PAD SWAP TYPE", "0 0 0 0 0 hello\nWorld")
+	check(t, "5 0 cb RESIZE-FILE . cb FILE-SIZE . . . cb FILE-POSITION . . . cb CLOSE-FILE .", "0 0 0 5 0 0 11 0 ")
+	check(t, "S\" sd:oftest1.txt\" R/O OPEN-FILE . VALUE cs PAD 80 cs READ-FILE . PAD SWAP TYPE cs CLOSE-FILE .", "0 0 hello0 ")
+	// CREATE-FILE empties a file that is there, and frees its clusters.
+	check(t, "S\" sd:oftest1.txt\" R/W CREATE-FILE . VALUE cc S\" ab\" cc WRITE-FILE . cc FILE-SIZE . . . cc CLOSE-FILE .", "0 0 0 0 2 0 ")
+	// A long name, found regardless of case.
+	check(t, "S\" sd:oftest1.txt\" S\" sd:OctoForth Test.text\" RENAME-FILE . S\" sd:oftest1.txt\" FILE-STATUS NIP . S\" sd:octoforth test.TEXT\" FILE-STATUS NIP .", "0 -38 0 ")
+	// More than a block and than a cluster of 4 KB, read across a block's end.
+	check(t, "CREATE cbig 9000 ALLOT cbig 9000 CHAR q FILL S\" sd:OctoForth Test.text\" W/O CREATE-FILE . VALUE cd cbig 9000 cd WRITE-FILE . cd CLOSE-FILE .", "0 0 0 ")
+	check(t, "cbig 9000 ERASE S\" sd:OctoForth Test.text\" R/O OPEN-FILE . VALUE ce 8190 0 ce REPOSITION-FILE . cbig 100 ce READ-FILE . . cbig 99 + C@ EMIT ce FILE-SIZE . . . ce CLOSE-FILE .", "0 0 0 100 q0 0 9000 0 ")
+	// Written past its end, a file has zeros up to where it was written.
+	check(t, "S\" sd:oftest2.txt\" W/O CREATE-FILE . VALUE cg 600 0 cg REPOSITION-FILE . S\" x\" cg WRITE-FILE . cg FILE-SIZE . . . cg CLOSE-FILE .", "0 0 0 0 0 601 0 ")
+	check(t, "S\" sd:oftest2.txt\" R/O OPEN-FILE . VALUE ch cbig 700 ch READ-FILE . . cbig C@ . cbig 600 + C@ EMIT ch CLOSE-FILE .", "0 0 601 0 x0 ")
+	// An open file is neither deleted nor opened to be written.
+	check(t, "S\" sd:oftest2.txt\" R/O OPEN-FILE . VALUE ci S\" sd:oftest2.txt\" DELETE-FILE 0= . S\" sd:oftest2.txt\" W/O OPEN-FILE NIP 0= . ci CLOSE-FILE .", "0 0 0 0 ")
+	check(t, "S\" sd:a*b\" W/O CREATE-FILE NIP 0= . S\" sd:\" R/O OPEN-FILE NIP 0= . S\" sd:nodir/x.txt\" R/O OPEN-FILE . .", "0 0 -38 0 ")
+	check(t, "S\" sd:oftest2.txt\" S\" oftest2.txt\" RENAME-FILE 0= . S\" sd:\" DELETE-FILE 0= .", "0 0 ")
+	check(t, "S\" sd:oftest2.txt\" DELETE-FILE . S\" sd:OctoForth Test.text\" DELETE-FILE . S\" sd:oftest2.txt\" DELETE-FILE 0= .", "0 0 0 ")
+	for f := range files {
+		if files[f].open {
+			printf("file %d left open\n", f)
+			t.Fail()
+		}
+	}
+}

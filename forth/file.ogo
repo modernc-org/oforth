@@ -8,11 +8,12 @@ import (
 
 // Files, which INCLUDE and the FILE words read and write: a table of the
 // open ones, each through a buffer of its own, which holds what was read
-// or what is written and not yet sent. They are in the host's directory
-// over 9P for now (nine.ogo); the SD card is to come behind the same
-// functions, fileOpen, fileByte, fileWrite, fileSeek and the rest. A
-// file's fileid is its place in the table plus one, so that none is 0,
-// the console's SOURCE-ID, or -1, EVALUATE's.
+// or what is written and not yet sent. A name is of the host's directory,
+// over 9P (nine.ogo), or, after sd: or SD:, of the SD card in the slot
+// (fat.ogo, sd.ogo), both behind the same functions, fileOpen, fileByte,
+// fileWrite, fileSeek and the rest. A file's fileid is its place in the
+// table plus one, so that none is 0, the console's SOURCE-ID, or -1,
+// EVALUATE's.
 
 const (
 	maxFiles = 8
@@ -38,6 +39,15 @@ type file struct {
 	buf    [fileBufN]byte
 	name   [maxName]byte // for an error's message
 	nname  int
+
+	card   bool   // on the SD card, the rest of these its
+	synced bool   // its entry says its first cluster and size
+	gen    uint32 // volGen when it was opened
+	first  uint32 // its first cluster, 0 if it has none
+	size   uint32
+	clus   uint32 // its cidx-th cluster, 0 when none is known
+	cidx   uint32
+	ent    dirPos // its entry
 }
 
 var files [maxFiles]file
@@ -57,48 +67,93 @@ func fileOf(id uint32) (int, bool) {
 // when create is set, and answers it, or -1, what went wrong being in
 // nineErr.
 func fileOpen(name []byte, mode uint32, create bool) int {
-	for f := 0; f < maxFiles; f++ {
-		fl := &files[f]
-		if fl.open {
-			continue
-		}
-		ok := false
-		if create {
-			ok = nineCreate(fidOf(f), name, mode)
-		} else {
-			ok = nineWalk(0, fidOf(f), name) && nineOpen(fidOf(f), mode)
-		}
-		if !ok {
-			return -1
-		}
-		fl.open = true
-		fl.dirty = false
-		fl.mode = mode
-		fl.off = 0
-		fl.pos = 0
-		fl.n = 0
-		fl.nname = copy(fl.name[:], name)
-		return f
+	f := 0
+	for f < maxFiles && files[f].open {
+		f++
 	}
-	setNineErr("too many open files")
-	return -1
+	if f == maxFiles {
+		setNineErr("too many open files")
+		return -1
+	}
+	fl := &files[f]
+	s, card := cardName(name)
+	ok := false
+	switch {
+	case card:
+		ok = cardOpen(f, s, mode, create)
+	case create:
+		ok = nineCreate(fidOf(f), name, mode)
+	default:
+		ok = nineWalk(0, fidOf(f), name) && nineOpen(fidOf(f), mode)
+	}
+	if !ok {
+		return -1
+	}
+	fl.open = true
+	fl.card = card
+	fl.dirty = false
+	fl.mode = mode
+	fl.off = 0
+	fl.pos = 0
+	fl.n = 0
+	fl.nname = copy(fl.name[:], name)
+	return f
+}
+
+// cardName answers the name on the card that name is, sd:NAME or SD:NAME,
+// if it is one.
+func cardName(name []byte) ([]byte, bool) {
+	if len(name) >= 3 && upper(name[0]) == 'S' && upper(name[1]) == 'D' && name[2] == ':' {
+		return name[3:], true
+	}
+	return name, false
+}
+
+// backRead reads into p what f has from off on, as the host or the card
+// gives it, and answers how much, 0 at the file's end, or -1.
+func backRead(f int, off uint32, p []byte) int {
+	if files[f].card {
+		return cardRead(f, off, p)
+	}
+	return nineRead(fidOf(f), off, p)
+}
+
+// backWrite writes p, or what of it goes in one go, to f at off, and
+// answers how much, or -1 or 0.
+func backWrite(f int, off uint32, p []byte) int {
+	if files[f].card {
+		return cardWrite(f, off, p)
+	}
+	return nineWrite(fidOf(f), off, p)
 }
 
 // fileClose closes f, and answers whether what was written to it got to
-// the host.
+// the host or the card.
 func fileClose(f int) bool {
 	fl := &files[f]
 	if !fl.open {
 		return true
 	}
-	ok := fileFlush(f)
+	ok := fileSync(f)
 	fl.open = false
-	nineClunk(fidOf(f))
+	if !fl.card {
+		nineClunk(fidOf(f))
+	}
 	return ok
 }
 
-// fileFlush sends what was written to f to the host. What could not be
-// sent is lost.
+// fileSync is fileFlush, and on the card makes the volume say what was
+// written.
+func fileSync(f int) bool {
+	ok := fileFlush(f)
+	if files[f].card {
+		ok = cardSync(f) && ok
+	}
+	return ok
+}
+
+// fileFlush sends what was written to f to the host or the card. What could
+// not be sent is lost.
 func fileFlush(f int) bool {
 	fl := &files[f]
 	if !fl.dirty {
@@ -107,7 +162,7 @@ func fileFlush(f int) bool {
 	fl.dirty = false
 	ok := true
 	for at := 0; at < fl.n; {
-		k := nineWrite(fidOf(f), fl.off+uint32(at), fl.buf[at:fl.n])
+		k := backWrite(f, fl.off+uint32(at), fl.buf[at:fl.n])
 		if k <= 0 {
 			ok = false
 			break
@@ -131,7 +186,7 @@ func fileByte(f int) int {
 		fl.off += uint32(fl.n)
 		fl.pos = 0
 		fl.n = 0
-		k := nineRead(fidOf(f), fl.off, fl.buf[:])
+		k := backRead(f, fl.off, fl.buf[:])
 		if k < 0 {
 			return -2
 		}
@@ -216,6 +271,10 @@ func fileSeek(f int, to uint32) bool {
 
 // fileSize answers how long f is.
 func fileSize(f int) (uint32, bool) {
+	if files[f].card {
+		ok := fileFlush(f)
+		return files[f].size, ok
+	}
 	if !fileFlush(f) || !nineStat(fidOf(f)) {
 		return 0, false
 	}
@@ -231,6 +290,9 @@ func fileResize(f int, size uint32) bool {
 	fl.off += uint32(fl.pos)
 	fl.pos = 0
 	fl.n = 0
+	if fl.card {
+		return cardResize(f, size)
+	}
 	return nineWstat(fidOf(f), size, nil)
 }
 
@@ -244,7 +306,8 @@ func lastSlash(name []byte) int {
 }
 
 // plainName answers whether name names a file below the directory served,
-// so that what is removed or renamed by it is never that directory.
+// or the card's root, so that what is removed or renamed by it is never
+// that directory.
 func plainName(name []byte) bool {
 	parts := 0
 	for i := 0; i < len(name); {
@@ -270,6 +333,9 @@ func plainName(name []byte) bool {
 
 // fileStatus answers the 9P mode of the file name, if there is one.
 func fileStatus(name []byte) (uint32, bool) {
+	if s, card := cardName(name); card {
+		return cardStatus(s)
+	}
 	if !nineWalk(0, nineTemp, name) {
 		return 0, false
 	}
@@ -281,8 +347,12 @@ func fileStatus(name []byte) (uint32, bool) {
 
 // fileDelete removes the file name, which is to be no directory.
 func fileDelete(name []byte) bool {
-	if !plainName(name) {
+	s, card := cardName(name)
+	if !plainName(s) {
 		return false
+	}
+	if card {
+		return cardDelete(s)
 	}
 	m, ok := fileStatus(name)
 	if !ok {
@@ -296,8 +366,14 @@ func fileDelete(name []byte) bool {
 }
 
 // fileRename renames the file from to; 9P renames a file within its
-// directory only.
+// directory only, and so does the card, as alike.
 func fileRename(from, to []byte) bool {
+	from, fc := cardName(from)
+	to, tc := cardName(to)
+	if fc != tc {
+		setNineErr("a file stays where it is")
+		return false
+	}
 	if !plainName(from) || !plainName(to) {
 		return false
 	}
@@ -305,6 +381,9 @@ func fileRename(from, to []byte) bool {
 	if !bytesEq(from[:i+1], to[:j+1]) {
 		setNineErr("a file stays in its directory")
 		return false
+	}
+	if fc {
+		return cardRename(from, to)
 	}
 	if !nineWalk(0, nineTemp, from) {
 		return false
@@ -667,7 +746,7 @@ func octoFile(id int) {
 		push(ior(ok))
 	case oFlushFile:
 		f, ok := fileOf(pop())
-		push(ior(ok && fileFlush(f)))
+		push(ior(ok && fileSync(f)))
 	case oFilePosition, oFileSize:
 		f, ok := fileOf(pop())
 		v := uint32(0)
