@@ -164,6 +164,14 @@ func seeOne(at, end int) int {
 		hex(v&0xfffff, 5)
 		return n + 3
 	}
+	// A DO loop's REP, the length of its block in D.
+	if at+2 < end && code[at] == tplLong(tRep, 0) && code[at+1] == tplLong(tRep, 1) &&
+		code[at+2]&^(511<<9) == tplLong(tRep, 2)&^(511<<9) {
+		typeStr("REP ")
+		typeBytes(digits(code[at+2]>>9&511, false))
+		typeStr(" longs")
+		return 3
+	}
 	// What ends in a branch: the branch's target is the next long's.
 	pairs := [...]int{tIf, tJz, tQdo, tJz, tLoop, tJnz, tPloop, tJnc, tOf, tJnz}
 	label := [...]string{"0BRANCH ", "?DO ", "LOOP ", "+LOOP ", "OF "}

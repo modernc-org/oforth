@@ -17,11 +17,12 @@ It is the third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
-**Status, 2026-10-28: milestone M2 done, M4 begun.** A REPL on the serial
+**Status, 2026-10-29: milestone M2 done, M4 begun.** A REPL on the serial
 line compiles every colon definition to P2 machine code: 80 primitives
 copied in as P2 instructions, literals folded into the instructions that
 use them, small words inlined, a call in tail position made a jump, a loop
-without calls run from cog RAM, calls with the return address in a register
+without calls run from cog RAM, a DO loop there with no branch in its body
+repeated by REP, calls with the return address in a register
 and the return stack in LUT RAM, and 109 words written in OctoGo that
 compiled code calls back into. It passes
 the CORE and CORE EXT tests of the Forth-2012 test suite on the board, with
@@ -63,9 +64,9 @@ clock frequency. Fewer is faster.
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| an empty `DO LOOP`, 100,000 times | 800,113 | 7,200,129 | 3,200,288 |
-| an empty colon word called 100,000 times | 800,113 | 13,600,129 | 9,600,288 |
-| the Byte sieve, 8192 flags, one pass | 1,400,057 | 6,390,449 | 13,546,112 |
+| an empty `DO LOOP`, 100,000 times | 200,124 | 7,200,129 | 3,200,288 |
+| an empty colon word called 100,000 times | 200,132 | 13,600,129 | 9,600,288 |
+| the Byte sieve, 8192 flags, one pass | 1,400,049 | 6,390,449 | 13,546,112 |
 | `25 fib`, recursive | 18,080,718 | 53,969,641 | 97,114,008 |
 | `10 fact` 10,000 times, recursive | 14,560,026 | 48,960,129 | 42,800,280 |
 
@@ -90,7 +91,8 @@ of them being in this repository. Taken as they are:
   tenth with where its words land in memory (its calls took 15,200,129 in
   one build), and its archive of 2025-07-11 ran within that.
 - OctoForth inlines the empty word since M4, so the second row is its loop
-  alone, which runs from cog RAM, 8 clocks an iteration; `fib` and `fact`,
+  alone, which runs from cog RAM by REP, 2 clocks an iteration, the
+  increment of its index; `fib` and `fact`,
   recursive, measure its calls (34 clocks a call and return, 8 more for the
   frame). Its timings, too, move by a few percent with where code lands, a
   taken branch in hub RAM costing 13 to 20 clocks with its target's place:
@@ -112,16 +114,16 @@ around the work, in milliseconds; fewer is faster.
 | --- | --- | --- | --- |
 | Ertl: sieve, 1000 times | 5,503 | does not run | 34,380 |
 | Ertl: bubble sort, 6000 | 10,207 | 82,960 | 78,262 |
-| Ertl: matrix multiply, 64 by 64 | 224 | 1,288 | 1,168 |
+| Ertl: matrix multiply, 64 by 64 | 208 | 1,288 | 1,168 |
 | Ertl: `34 fib` | 7,743 | 23,477 | 42,075 |
 | Stanford Perm, 10 times | 784 | does not load | does not fit |
 | Stanford Towers | 1,376 | | |
-| Stanford Queens | 720 | | |
-| Stanford Intmm | 1,696 | | |
-| Stanford Puzzle | 6,591 | | |
+| Stanford Queens | 688 | | |
+| Stanford Intmm | 1,680 | | |
+| Stanford Puzzle | 6,607 | | |
 | Stanford Quick | 864 | | |
 | Stanford Bubble | 992 | | |
-| Stanford Trees | 3,056 | | |
+| Stanford Trees | 3,040 | | |
 
 The programs run as their authors wrote them but for what the script
 prints: the matrices are 64 by 64, not 200 by 200, which needs 480 KB;
@@ -177,6 +179,18 @@ Moving the code alone moves Perm, Towers and Queens by 4 to 5%, so their
 changes are placement, not the cache. Most of Fraeman's loops call his
 small words that use the return stack, which are not inlined, so the
 cache leaves them in hub RAM.
+
+A DO loop in cog RAM whose body has no branch, call or trap repeats it by
+REP, which costs nothing an iteration there: the block is the body and
+LOOP's increment of the index, and three longs before it set the count,
+the limit less the index. LOOP's compare and branch stay after the block
+and run on only when the count is 0, a `DO` from a limit to itself being
+2^32 iterations, which REP would take for none. The empty loop takes 2
+clocks an iteration so, against 8, and Ertl's matrix multiplication,
+whose inner loop is such a loop, 208 ms against 224. Fraeman's inner
+loops branch or call, or are `BEGIN` loops over the return stack, so only
+his set-up loops are repeated, and his times move by no more than where
+the longer loops move the code to.
 
 ## Why another Forth for the P2
 

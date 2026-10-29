@@ -198,6 +198,9 @@ func TestEncoder(t *testing.T) {
 	missAt = 0x7fff8
 	loader(l, 40, 0x12340)
 	missAt = m
+	l = cp
+	cp += 3
+	repeat(l, 37)
 	emitT(tNop)
 	for i := 0; i < cp-at; i++ {
 		got := code[at+i]
@@ -207,8 +210,8 @@ func TestEncoder(t *testing.T) {
 			t.Fail()
 		}
 	}
-	if cp-at != 21 {
-		printf("%d longs, want 21\n", cp-at)
+	if cp-at != 24 {
+		printf("%d longs, want 24\n", cp-at)
 		t.Fail()
 	}
 	cp = at
@@ -442,4 +445,35 @@ func TestCache(t *testing.T) {
 	// DOES> code's loops are cached too.
 	check(t, ": sumd CREATE , DOES> @ 0 SWAP 0 DO I + LOOP ; 10 sumd s10 s10 .", "45 ")
 	checkHas(t, "SEE sumd", "CACHE ")
+}
+
+// A DO LOOP in cog RAM with no branch, call or trap in its body repeats the
+// body by REP.
+func TestRep(t *testing.T) {
+	check(t, ": re1 0 10 0 DO I + LOOP ; re1 .", "45 ")
+	checkHas(t, "SEE re1", "REP ")
+	checkHas(t, "SEE re1", "LOOP cog ")
+	check(t, ": re2 0 SWAP 0 ?DO 1+ LOOP ; 0 re2 . 1 re2 . 7 re2 .", "0 1 7 ")
+	check(t, ": re3 0 -3 -10 DO 1+ LOOP ; re3 .", "7 ")
+	check(t, ": re4 0 5 0 DO I I * + LOOP ; re4 .", "30 ")
+	check(t, ": re5 0 3 0 DO 4 0 DO I J + + LOOP LOOP ; re5 .", "30 ")
+	checkHas(t, "SEE re5", "REP ")
+	check(t, ": re6 10 0 DO I LOOP ; re6 + + + + + + + + + .", "45 ")
+	check(t, ": re7 0 100000 0 DO 1+ LOOP ; re7 .", "100000 ")
+	checkHas(t, "SEE re7", "REP ")
+	// And not otherwise.
+	check(t, ": rn1 0 10 0 DO I 1 AND IF 1+ THEN LOOP ; rn1 .", "5 ")
+	checkNot(t, "SEE rn1", "REP ")
+	check(t, ": rn2 0 10 0 DO 1+ 2 +LOOP ; rn2 .", "5 ")
+	checkNot(t, "SEE rn2", "REP ")
+	checkNot(t, "SEE rn2", "NOP")
+	check(t, "CREATE rbuf 8 ALLOT : rn3 3 0 DO rbuf 8 I FILL LOOP ; rn3 rbuf C@ . rbuf 7 + C@ .", "2 2 ")
+	checkNot(t, "SEE rn3", "REP ")
+	check(t, ": rn4 10 0 DO I UNLOOP EXIT LOOP ; rn4 .", "0 ")
+	checkNot(t, "SEE rn4", "REP ")
+	check(t, ": rcall >R R> 1+ ; : rn5 0 5 0 DO rcall LOOP ; rn5 .", "5 ")
+	checkNot(t, "SEE rn5", "REP ")
+	checkNot(t, "SEE rn5", "NOP")
+	check(t, ": rn6 0 10 0 DO 1+ DUP 5 = IF LEAVE THEN LOOP ; rn6 .", "5 ")
+	checkNot(t, "SEE rn6", "REP ")
 }

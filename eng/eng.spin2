@@ -18,7 +18,10 @@
 ' area, which is free while a word runs. CTAG names the loop cog RAM holds,
 ' by its hub address and length less one in bits 27:20, so that a loop
 ' entered again is not copied again; run clears it at every entry, the
-' backend's own loops taking the area between runs.
+' backend's own loops taking the area between runs. A DO LOOP there whose
+' body has no branch repeats it by REP, LOOP's increment of LIX the block's
+' last long; with a count of 0, which is 2^32 iterations, the REP is not
+' executed and the loop runs by LOOP's compare and branch.
 '
 ' A trap is a word asking OctoGo for something: "mov rq, #id" and "calld
 ' cont, back". run returns to OctoGo with the request in RQ and the
@@ -858,6 +861,13 @@ qdo_e
 loop_b        add     lix, #1
               cmp     lix, lim wz
 loop_e
+              long    (@rep_e - @rep_b) >> 2 | F_HIDDEN
+              byte    "~rep", 0
+              alignl
+rep_b         mov     t2, lim                 ' the iterations left
+              sub     t2, lix wz
+        if_nz rep     #1, t2                  ' the block's length in D
+rep_e
               long    (@ploop_e - @ploop_b) >> 2 | F_HIDDEN
               byte    "~+loop", 0
               alignl
@@ -991,4 +1001,7 @@ encref        calld   pb, #\$12344
               cmp     t2, ctag wz
         if_nz jmp     #\$7FFF8
               jmp     #\$0
+              mov     t2, lim
+              sub     t2, lix wz
+        if_nz rep     #37, t2
               nop

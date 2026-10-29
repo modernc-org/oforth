@@ -570,6 +570,7 @@ func octo(id int) {
 	case oExit:
 		flushLit()
 		inlinable = false
+		lastNoRep = cp
 		emitT(tExit)
 	case oLeftBracket:
 		flushLit()

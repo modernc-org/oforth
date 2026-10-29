@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (eighteen tests by M4); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (nineteen tests by M4); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -37,17 +37,23 @@ Reloaded's. Third parties' benchmarks too (`scripts/third.sh`, README.md
 all twelve passing on OctoForth, three of Ertl's on P2XCForth, all four of
 Ertl's on TAQOZ. The board's SD card, p2-11's, sometimes stopped
 answering after resets (TAQOZ then stopped at boot with "BAD CID"), and
-only a power cycle cured it; the user took it out on 2026-10-29. TAQOZ
-boots without it, and its boot line still names that card: the ID is in
-its `cid` buffer in the image `BACKUP FLASH` saved, and with no card the
-boot does not read it again. Next is M3 (the P2 words, RUN, the
+only a power cycle cured it; the user took it out on 2026-10-29, and
+TAQOZ boots without it. Its boot line names whatever card its `cid`
+buffer held when `BACKUP FLASH` saved it, the boot reading none when the
+slot is empty: p2-11's card until the flash was written again that night
+with the slot empty, and since then TAQOZ's author's, the ID in the image
+as it ships. `../p2-11` and `../obeam` have a note of it,
+`HANDOFF-oforth-2026-10-29.md`. Next is M3 (the P2 words, RUN, the
 embedding API) or M4 (speed: inlining, tail calls, the LUT cache), the
 user's to choose; the user chose M4, begun the same night: inlining, tail
 calls and FILL in PASM done, then the loop cache (the user's "LUT cache",
 in cog RAM since the LUT has no room beside the stacks): the empty loop 3
 times as fast, Ertl's sieve 1.5, Fraeman's Bubble 1.2, nothing lost
-elsewhere, as the mean of eight builds shifting the code showed. Next in
-M4: REP for innermost loops, INCLUDE. Not yet: file loading, a host
+elsewhere, as the mean of eight builds shifting the code showed; then
+REP for a DO loop in cog RAM with no branch in its body, 2026-10-29: the
+empty loop 2 clocks an iteration, against 8, Ertl's matrix
+multiplication 224 ms to 208. Next in M4: INCLUDE (the card being out,
+over the serial line or from the card when it is back). Not yet: a host
 twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
@@ -179,8 +185,9 @@ version` and the clock they were taken at, never from the estimates.
   shared with the ogo, p2-11 and obeam sessions. Its flash holds TAQOZ
   Reloaded V2.14.0 (the image of 2024-02-19 from SourceForge's
   TAQOZ/binaries), written there on 2026-10-28 at the user's word by
-  loading `_BOOT_P2.BIX` and typing `BACKUP FLASH`; it had held obeam's
-  hello since 2026-10-17. After a reset with no loader the board boots it,
+  loading `_BOOT_P2.BIX` and typing `BACKUP FLASH`, and again so on
+  2026-10-29 with the SD slot empty, loaded with `-ZERO`; it had held
+  obeam's hello since 2026-10-17. After a reset with no loader the board boots it,
   at 921600 baud, and `scripts/taqoz.py` talks to it. Its data space has no
   room for 8 KB and it has a word FLAGS of its own, which a `:=` of the same
   name breaks (bench/taqoz.fth). The ROM's TAQOZ, V1.1, is `ogo loadp2
@@ -308,6 +315,19 @@ All measured or read in this session and recorded with their sources in
   DOES> and `define` inside an open loop set `cacheOff`, their code
   having to stay put. SEE shows `CACHE n longs from addr` and `cog`
   targets.
+- **REP** (`compile.ogo`, M4): `compileDo` reserves three longs after the
+  loader's five, and `compileLoop` either writes there `~rep` (MOV T2,
+  LIM; SUB T2, LIX WZ; IF_NZ REP with the block's length in D), for a
+  LOOP whose body (`repeatable`) has no branch in `branchAt`, nothing
+  impure since its start and nothing of `tNoRep` (FILL, UNLOOP, EXECUTE,
+  and EXIT, `lastNoRep`; `fNoRep` for an inlined word with any of them),
+  in a loop short enough to be cached, or `cut`s them out. Such a loop is
+  always cached but under `cacheOff`, which leaves the three as NOPs, or
+  when `cacheOff` comes before the loop around it ends, which leaves the
+  REP in hub RAM, where it works but gains nothing. The block is the body
+  and `~loop`'s ADD; `~loop`'s CMP and the JNZ, to the body past the REP,
+  stay after it for a count of 0, a DO's 2^32 iterations, when the REP
+  is not executed. SEE shows `REP n longs`.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and

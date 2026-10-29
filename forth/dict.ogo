@@ -27,6 +27,7 @@ const (
 	fImmediate = 1 << iota
 	fHidden    // a definition not yet ended
 	fCompile   // compile only
+	fNoRep     // inlined, its body breaks a REP (compile.ogo's tNoRep)
 )
 
 type word struct {
