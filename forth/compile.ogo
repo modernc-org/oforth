@@ -31,7 +31,9 @@ var (
 	tDup, tLit, tNlit, tAugs, tCall, tJmp, tJz, tJnz, tJnc, tIf   int
 	tEnter, tExit, tRet, tTrap, tDo, tQdo, tLoop, tPloop, tUnloop int
 	tFoldPlus, tFoldMinus, tPlus, tMinus, tOf, tUnframe           int
+	tNop, tTag, tTagCmp                                           int
 	ds0, dsMax, rp0                                               uint32
+	missAt                                                        uint32 // the engine's cache miss
 )
 
 func tplLong(t, i int) uint32 { return peek(tAddr[t] + uint32(i)*4) }
@@ -93,6 +95,10 @@ func loadTemplates() {
 	tFoldMinus = hiddenTpl("~-")
 	tOf = hiddenTpl("~of")
 	tUnframe = hiddenTpl("~unframe")
+	tNop = hiddenTpl("~nop")
+	tTag = hiddenTpl("~tag")
+	tTagCmp = hiddenTpl("~tagcmp")
+	missAt = eng.MissAddr()
 	for t := 0; t < ntpl; t++ {
 		if tFlags[t]&tfHidden != 0 {
 			continue
@@ -129,6 +135,7 @@ func loadTemplates() {
 	for _, s := range [...]string{">R", "R>", "R@", "2>R", "2R>", "2R@", "I", "J", "UNLOOP", "EXECUTE"} {
 		tNoInline[primTpl(s)] = true
 	}
+	tImpure[primTpl("EXECUTE")] = true
 	tPlus = primTpl("+")
 	tMinus = primTpl("-")
 }
@@ -183,7 +190,27 @@ var (
 	bodyStart int
 
 	tNoInline [maxTemplates]bool
+	tImpure   [maxTemplates]bool // calls, so no loop with it is cached
+
+	// For the cache of hot loops: where the definition's absolute branches
+	// are, where its last call or trap is, the loops open, and the loops
+	// found cacheable inside loops not yet ended.
+	branchAt   [1024]int32
+	nbranch    int
+	lastImpure int
+	loops      [32]int32 // each open loop's first candidate
+	nloops     int
+	cands      [64]struct{ rs, re int32 }
+	ncands     int
+	tocache    [32]struct{ rs, re int32 } // cached when the definition ends
+	ntocache   int
+	cacheOff   bool // too much to keep track of, or code that must stay put
 )
+
+// maxCache is the longest loop, in longs, the cog RAM cache takes: the
+// FCACHE area, $000-$0FF, which the backend loads its own loops into
+// between our runs and which is free while a word runs.
+const maxCache = 240
 
 // maxInline is the longest body, in longs, a word may have to be inlined.
 const maxInline = 16
@@ -206,6 +233,9 @@ func emitT(t int) {
 // emitImm emits template t with v in its immediate field, preceded by an
 // AUGS for the bits above the nine an instruction holds.
 func emitImm(t int, v uint32) {
+	if t == tTrap {
+		lastImpure = cp
+	}
 	slot := 0
 	if tFlags[t]&tfSlot1 != 0 {
 		slot = 1
@@ -228,6 +258,12 @@ func emitAbs(t int, a uint32) {
 	inlinable = false
 	if t == tCall {
 		lastCall = cp
+		lastImpure = cp
+	} else if nbranch < len(branchAt) {
+		branchAt[nbranch] = int32(cp)
+		nbranch++
+	} else {
+		cacheOff = true
 	}
 	emitw(tplLong(t, 0) | a&0xfffff)
 }
@@ -290,6 +326,9 @@ func compileWord(w int) {
 		flushLit()
 		if tNoInline[t] {
 			inlinable = false
+		}
+		if tImpure[t] {
+			lastImpure = cp
 		}
 		emitT(t)
 	case kColon:
@@ -405,6 +444,12 @@ func beginColon(s []byte, anon bool) {
 	landing = -1
 	inlinable = true
 	bodyStart = cp
+	nbranch = 0
+	lastImpure = -1
+	nloops = 0
+	ncands = 0
+	ntocache = 0
+	cacheOff = false
 	setCompiling(true)
 }
 
@@ -414,6 +459,11 @@ func endColon() {
 		abort("unbalanced control structure")
 		return
 	}
+	// No code moves now: the cached loops get their loaders.
+	for i := 0; i < ntocache; i++ {
+		cacheLoop(int(tocache[i].rs), int(tocache[i].re))
+	}
+	ntocache = 0
 	n := cp - bodyStart
 	switch {
 	case lastCall >= 0 && lastCall == cp-1 && landing != cp:
@@ -482,8 +532,174 @@ func compileThen() {
 	resolve(int(e.at), codeAddr(cp))
 }
 
+// A loop's code is kept between two reservations: five longs before its
+// first, for the loader that brings it into cog RAM and jumps there, and a
+// long after its last, for the jump back to hub RAM. When the loop ends,
+// endLoop decides whether it is cached: if not, the reservations are taken
+// out; if so, they are its loader and its exit, written when the
+// definition ends.
+func beginLoop() {
+	for i := 0; i < 5; i++ {
+		emitT(tNop)
+	}
+	if nloops == len(loops) {
+		cacheOff = true
+		return
+	}
+	loops[nloops] = int32(ncands)
+	nloops++
+}
+
+// endLoop ends the loop whose code began at rs, its exits having been
+// resolved to here. A loop without calls or traps is cached if no loop
+// around it is, a cached loop's inner loops going with it; when a loop
+// has a call or a trap, the loops inside it found cacheable are cached.
+// The loops inside one that is a candidate itself are never cached alone.
+func endLoop(rs int) {
+	emitT(tNop)
+	re := cp
+	if cacheOff || nloops == 0 || aborted {
+		return
+	}
+	nloops--
+	base := int(loops[nloops])
+	// Its length once its candidates' reservations are out.
+	pure := lastImpure < rs && re-rs-6*(ncands-base) <= maxCache
+	if !pure {
+		for i := base; i < ncands; i++ {
+			if ntocache == len(tocache) {
+				cacheOff = true
+				return
+			}
+			tocache[ntocache] = cands[i]
+			ntocache++
+		}
+		ncands = base
+		squeeze(rs, re)
+		return
+	}
+	for ncands > base {
+		ncands--
+		c := cands[ncands]
+		squeeze(int(c.rs), int(c.re))
+	}
+	re = cp
+	if nloops > 0 {
+		if ncands == len(cands) {
+			cacheOff = true
+			return
+		}
+		cands[ncands].rs = int32(rs)
+		cands[ncands].re = int32(re)
+		ncands++
+		return
+	}
+	if ntocache == len(tocache) {
+		cacheOff = true
+		return
+	}
+	tocache[ntocache].rs = int32(rs)
+	tocache[ntocache].re = int32(re)
+	ntocache++
+}
+
+// squeeze takes the reservations out of the loop in code[rs:re], which is
+// not to be cached.
+func squeeze(rs, re int) {
+	cut(re-1, 1)
+	cut(rs-5, 5)
+}
+
+// cut takes the n longs at code[at] out of the definition, moving down
+// what follows and every place the compiler keeps of it.
+func cut(at, n int) {
+	for i := at; i+n < cp; i++ {
+		code[i] = code[i+n]
+	}
+	cp -= n
+	lo := codeAddr(at)
+	for i := 0; i < nbranch; i++ {
+		p := moved(int(branchAt[i]), at, n)
+		branchAt[i] = int32(p)
+		if a := code[p] & 0xfffff; a > lo {
+			code[p] = code[p]&^0xfffff | codeAddr(moved(int(a-codeAddr(0))/4, at, n))&0xfffff
+		}
+	}
+	for i := 0; i < ncs; i++ {
+		cs[i].at = int32(moved(int(cs[i].at), at, n))
+	}
+	for i := 0; i < nleaves; i++ {
+		leaves[i] = int32(moved(int(leaves[i]), at, n))
+	}
+	for i := 0; i < nendofs; i++ {
+		endofs[i] = int32(moved(int(endofs[i]), at, n))
+	}
+	for i := 0; i < ncands; i++ {
+		cands[i].rs = int32(moved(int(cands[i].rs), at, n))
+		cands[i].re = int32(moved(int(cands[i].re), at, n))
+	}
+	for i := 0; i < ntocache; i++ {
+		tocache[i].rs = int32(moved(int(tocache[i].rs), at, n))
+		tocache[i].re = int32(moved(int(tocache[i].re), at, n))
+	}
+	lastCall = moved(lastCall, at, n)
+	landing = moved(landing, at, n)
+	lastImpure = moved(lastImpure, at, n)
+}
+
+// moved answers where the long at x is after cut(at, n): past the longs
+// cut, n lower; among them, at at, where what followed them is now. Only
+// a branch to the first of a reservation, the loop's start, or to the
+// exit long, the code after the loop, points among them.
+func moved(x, at, n int) int {
+	switch {
+	case x >= at+n:
+		return x - n
+	case x > at:
+		return at
+	}
+	return x
+}
+
+// cacheLoop makes the loop in code[rs:re] run from cog RAM: its branches
+// to itself go to its place there, its last long goes back to hub RAM, and
+// the five longs before it load it and jump to it.
+func cacheLoop(rs, re int) {
+	if aborted {
+		return
+	}
+	base := codeAddr(rs)
+	end := codeAddr(re)
+	for i := 0; i < nbranch; i++ {
+		p := int(branchAt[i])
+		if p < rs || p >= re {
+			continue
+		}
+		if a := code[p] & 0xfffff; a >= base && a < end {
+			code[p] = code[p]&^0xfffff | (a-base)/4
+		}
+	}
+	code[re-1] = tplLong(tJmp, 0) | end&0xfffff
+	loader(rs-5, re-rs, base)
+}
+
+// loader writes at code[at] the five longs that run the n longs from base
+// from cog RAM $000: the loop's tag, its address and its length less one in
+// bits 27:20, is compared with the engine's CTAG, the tag of the loop cog
+// RAM holds; if they differ, the engine's miss routine copies the loop in.
+// Then a jump to $000.
+func loader(at, n int, base uint32) {
+	tag := base | uint32(n-1)<<20
+	code[at] = tplLong(tAugs, 0) | tag>>9
+	code[at+1] = tplLong(tTag, 0) | tag&511
+	code[at+2] = tplLong(tTagCmp, 0)
+	code[at+3] = tplLong(tJnz, 0) | missAt&0xfffff
+	code[at+4] = tplLong(tJmp, 0)
+}
+
 func compileBegin() {
 	flushLit()
+	beginLoop()
 	csPush(csDest, cp, 0)
 }
 
@@ -495,6 +711,7 @@ func compileUntil() {
 		return
 	}
 	emitAbs(tJz, codeAddr(int(e.at)))
+	endLoop(int(e.at))
 }
 
 func compileAgain() {
@@ -504,6 +721,7 @@ func compileAgain() {
 		return
 	}
 	emitAbs(tJmp, codeAddr(int(e.at)))
+	endLoop(int(e.at))
 }
 
 func compileWhile() {
@@ -531,6 +749,7 @@ func compileRepeat() {
 		return
 	}
 	resolve(int(o.at), codeAddr(cp))
+	endLoop(int(d.at))
 }
 
 func compileDo(q bool) {
@@ -542,6 +761,7 @@ func compileDo(q bool) {
 		addLeave(cp)
 		emitAbs(tJz, 0)
 	}
+	beginLoop()
 	csPush(csDo, cp, base)
 }
 
@@ -579,6 +799,7 @@ func compileLoop(plus bool) {
 	}
 	nleaves = int(e.leave)
 	emitT(tUnloop)
+	endLoop(int(e.at))
 }
 
 // standalone gives a word that pushes v the code that executes it.

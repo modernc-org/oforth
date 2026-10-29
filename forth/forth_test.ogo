@@ -192,6 +192,13 @@ func TestEncoder(t *testing.T) {
 	emitImm(tFoldPlus, 100000)
 	emitImm(int(tFold[primTpl("@")]), 0x7fff0)
 	emitImm(tTrap, 300)
+	l := cp
+	cp += 5
+	m := missAt
+	missAt = 0x7fff8
+	loader(l, 40, 0x12340)
+	missAt = m
+	emitT(tNop)
 	for i := 0; i < cp-at; i++ {
 		got := code[at+i]
 		want := peek(r + uint32(i)*4)
@@ -200,8 +207,8 @@ func TestEncoder(t *testing.T) {
 			t.Fail()
 		}
 	}
-	if cp-at != 15 {
-		printf("%d longs, want 15\n", cp-at)
+	if cp-at != 21 {
+		printf("%d longs, want 21\n", cp-at)
 		t.Fail()
 	}
 	cp = at
@@ -217,14 +224,23 @@ func contains(got []byte, want string) bool {
 }
 
 // checkHas is check for output only part of which is fixed.
-func checkHas(t *testing.T, src, want string) {
+func checkHas(t *testing.T, src, want string) { checkContains(t, src, want, true) }
+
+// checkNot is check for output that must not contain want.
+func checkNot(t *testing.T, src, want string) { checkContains(t, src, want, false) }
+
+func checkContains(t *testing.T, src, want string, has bool) {
 	ResetOutput()
 	Evaluate(src)
 	got := Output()
-	if !contains(got, want) {
+	if contains(got, want) != has {
 		printf("%s\n   got: \"", src)
 		show(got)
-		printf("\"\n  want it to contain: \"%s\"\n", want)
+		if has {
+			printf("\"\n  want it to contain: \"%s\"\n", want)
+		} else {
+			printf("\"\n  want it not to contain: \"%s\"\n", want)
+		}
 		t.Fail()
 	}
 	if d := depth(); d != 0 {
@@ -379,4 +395,51 @@ func TestFill(t *testing.T) {
 	check(t, "fb 32 0 FILL fb 8 67 FILL fb 7 + C@ . fb 8 + C@ .", "67 0 ")
 	check(t, "fb 32 0 FILL fb 0 67 FILL fb C@ .", "0 ")
 	check(t, ": ff fb 2 + 13 68 FILL ; ff fb 1+ C@ . fb 2 + C@ . fb 14 + C@ . fb 15 + C@ .", "0 68 68 0 ")
+}
+
+// TestCache holds the loops the cog RAM cache runs to what they compute in
+// hub RAM, and SEE to showing which ran from where.
+func TestCache(t *testing.T) {
+	check(t, ": ca1 0 10 0 DO I + LOOP ; ca1 .", "45 ")
+	checkHas(t, "SEE ca1", "CACHE ")
+	checkHas(t, "SEE ca1", "LOOP cog ")
+	check(t, ": ca2 0 BEGIN 1+ DUP 100 = UNTIL ; ca2 .", "100 ")
+	check(t, ": ca3 0 BEGIN DUP 5 < WHILE 1+ REPEAT ; ca3 .", "5 ")
+	check(t, ": ca4 0 3 0 DO 4 0 DO I J * + LOOP LOOP ; ca4 .", "18 ")
+	check(t, ": ca5 0 10 0 DO I 5 = IF LEAVE THEN I + LOOP ; ca5 .", "10 ")
+	check(t, ": ca6 0 0 ?DO 1+ LOOP ; 7 ca6 .", "7 ")
+	check(t, ": ca7 10 0 DO I 3 = IF I UNLOOP EXIT THEN LOOP 99 ; ca7 .", "3 ")
+	check(t, ": ca8 3 0 DO I . LOOP ; ca8", "0 1 2 ")
+	check(t, ": ca9 0 3 0 DO 5 0 DO 1+ LOOP I . LOOP ; ca9 .", "0 1 2 15 ")
+	check(t, ": ca10 0 BEGIN 1+ DUP 3 > IF EXIT THEN AGAIN ; ca10 .", "4 ")
+	check(t, ": ca11 0 20 0 DO I 2 MOD IF I + ELSE 1+ THEN 2 +LOOP ; ca11 .", "10 ")
+	check(t, ": ca12 CASE 1 OF 10 ENDOF 20 SWAP ENDCASE ; : ca13 0 4 0 DO I ca12 + LOOP ; ca13 .", "70 ")
+	check(t, "CREATE cbuf 100 ALLOT : ca14 cbuf 100 7 FILL 0 100 0 DO cbuf I + C@ + LOOP ; ca14 .", "700 ")
+	// A word with the return stack's words is called, not inlined, so the
+	// loops around cnc are not cached and the loops inside them are: entered
+	// again, one finds itself in cog RAM, two take turns there, and a called
+	// word's loop takes it between.
+	check(t, ": cnc >R R> 1+ ; : ca15 0 5 0 DO cnc 4 0 DO 1+ LOOP LOOP ; ca15 .", "25 ")
+	check(t, ": ca16 0 3 0 DO cnc 2 0 DO 1+ LOOP 3 0 DO 2 + LOOP LOOP ; ca16 .", "27 ")
+	check(t, ": cin 0 4 0 DO 1+ LOOP ; : ca17 0 3 0 DO cin + 2 0 DO 10 + LOOP LOOP ; ca17 .", "72 ")
+	// A loop longer than cog RAM takes runs from hub RAM.
+	check(t, ": 1s 0 ?DO POSTPONE 1+ LOOP ; IMMEDIATE : ca18 0 3 0 DO [ 250 ] 1s LOOP ; ca18 .", "750 ")
+	checkNot(t, "SEE ca18", "CACHE ")
+	// A loop not cached loses its reservations, and so does one inside a
+	// cached loop, moving what branches to and from them.
+	checkNot(t, "SEE ca18", "NOP")
+	checkNot(t, "SEE ca15", "NOP")
+	check(t, ": ca19 0 SWAP 0 ?DO cnc LOOP ; 0 ca19 . 3 ca19 .", "0 3 ")
+	check(t, ": ca20 DUP IF 1+ THEN BEGIN cnc DUP 10 > UNTIL ; 0 ca20 . 5 ca20 .", "11 11 ")
+	check(t, ": ca21 0 10 0 DO cnc I 5 = IF LEAVE THEN LOOP ; ca21 .", "6 ")
+	check(t, ": ca22 0 BEGIN DUP 10 < WHILE 1+ DUP 7 <> WHILE cnc REPEAT THEN ; ca22 .", "7 ")
+	check(t, ": ca23 0 BEGIN DUP 10 < WHILE 1+ DUP 70 <> WHILE 1+ REPEAT THEN ; ca23 .", "10 ")
+	check(t, ": ca24 0 3 0 DO 4 0 DO 1+ LOOP LOOP ; ca24 .", "12 ")
+	checkNot(t, "SEE ca24", "NOP")
+	check(t, ": ca25 0 BEGIN BEGIN 1+ DUP 3 MOD 0= UNTIL cnc DUP 20 > UNTIL ; ca25 .", "22 ")
+	check(t, ": ca26 0 4 0 DO I 2 MOD IF cnc ELSE 5 0 DO 1+ LOOP THEN LOOP ; ca26 .", "12 ")
+	check(t, ": ca27 0 3 0 DO cnc BEGIN 1+ DUP 7 MOD 0= UNTIL LOOP ; ca27 .", "21 ")
+	// DOES> code's loops are cached too.
+	check(t, ": sumd CREATE , DOES> @ 0 SWAP 0 DO I + LOOP ; 10 sumd s10 s10 .", "45 ")
+	checkHas(t, "SEE sumd", "CACHE ")
 }

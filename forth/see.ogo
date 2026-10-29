@@ -130,6 +130,16 @@ func seeTarget(a uint32) {
 	hex(a, 5)
 }
 
+// seeBranch writes a branch's target: in a cached loop, its place in cog RAM.
+func seeBranch(a uint32) {
+	if a < 0x400 {
+		typeStr("cog ")
+		hex(a, 3)
+		return
+	}
+	hex(a, 5)
+}
+
 // seeOne writes what the longs from code[at] are and answers how many.
 func seeOne(at, end int) int {
 	// A literal: DUP, then a MOV or NEG of TOS, AUGS perhaps between.
@@ -143,6 +153,17 @@ func seeOne(at, end int) int {
 			return n + 1
 		}
 	}
+	// A cached loop's loader: its tag, the compare, the miss, the jump.
+	if n, v, ok := match(tTag, at, end); ok && at+n+2 < end &&
+		code[at+n] == tplLong(tTagCmp, 0) &&
+		code[at+n+1] == tplLong(tJnz, 0)|missAt&0xfffff &&
+		code[at+n+2] == tplLong(tJmp, 0) {
+		typeStr("CACHE ")
+		typeBytes(digits(v>>20+1, false))
+		typeStr(" longs from ")
+		hex(v&0xfffff, 5)
+		return n + 3
+	}
 	// What ends in a branch: the branch's target is the next long's.
 	pairs := [...]int{tIf, tJz, tQdo, tJz, tLoop, tJnz, tPloop, tJnc, tOf, tJnz}
 	label := [...]string{"0BRANCH ", "?DO ", "LOOP ", "+LOOP ", "OF "}
@@ -150,7 +171,7 @@ func seeOne(at, end int) int {
 		if n, _, ok := match(pairs[i], at, end); ok {
 			if m, a, ok := match(pairs[i+1], at+n, end); ok {
 				typeStr(label[i/2])
-				hex(a, 5)
+				seeBranch(a)
 				return n + m
 			}
 		}
@@ -180,7 +201,7 @@ func seeOne(at, end int) int {
 				return n
 			}
 			typeStr(blabel[i])
-			hex(a, 5)
+			seeBranch(a)
 			return n
 		}
 	}

@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (fifteen tests); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (eighteen tests by M4); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -35,14 +35,20 @@ forum thread 176239; there is no repository), and 1.3 to 6.5 times TAQOZ
 Reloaded's. Third parties' benchmarks too (`scripts/third.sh`, README.md
 "Third parties' benchmarks"): Ertl's four and Fraeman's Stanford suite,
 all twelve passing on OctoForth, three of Ertl's on P2XCForth, all four of
-Ertl's on TAQOZ. The board's SD card sometimes stops answering after
-resets (TAQOZ then stops at boot with "BAD CID"); a power cycle of the
-board, the user's to do, has always cured it so far, and other sessions
-must pause the board for it first. Next is M3 (the P2 words, RUN, the
+Ertl's on TAQOZ. The board's SD card, p2-11's, sometimes stopped
+answering after resets (TAQOZ then stopped at boot with "BAD CID"), and
+only a power cycle cured it; the user took it out on 2026-10-29. TAQOZ
+boots without it, and its boot line still names that card: the ID is in
+its `cid` buffer in the image `BACKUP FLASH` saved, and with no card the
+boot does not read it again. Next is M3 (the P2 words, RUN, the
 embedding API) or M4 (speed: inlining, tail calls, the LUT cache), the
 user's to choose; the user chose M4, begun the same night: inlining, tail
-calls and FILL in PASM done; next the cache for hot loops. Not yet: file
-loading, a host twin. The repository is on
+calls and FILL in PASM done, then the loop cache (the user's "LUT cache",
+in cog RAM since the LUT has no room beside the stacks): the empty loop 3
+times as fast, Ertl's sieve 1.5, Fraeman's Bubble 1.2, nothing lost
+elsewhere, as the mean of eight builds shifting the code showed. Next in
+M4: REP for innermost loops, INCLUDE. Not yet: file loading, a host
+twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -202,7 +208,9 @@ All measured or read in this session and recorded with their sources in
   writes the engine's registers by name. LUT $200-$20F is always free and
   $210-$2FF is free when no function is placed in LUT, which OctoGo never
   does; $300-$3FF is the backend's. COG $000-$0FF is the FCACHE, scratch
-  while no cached loop runs. PTRA is the C stack pointer; PTRB and PB are
+  while no cached loop runs: OctoForth's loop cache uses $000-$0EF while a
+  word runs, the backend's FCACHE_LOAD_ reloading its own loops every
+  time. PTRA is the C stack pointer; PTRB and PB are
   unused but for the FCACHE loader, which saves and restores PTRB.
 - Compiled code runs from hub RAM from $400 up; a hub array is a code space
   and `unsafe` stores write it. The FIFO (19 longs) reloads at every taken
@@ -282,6 +290,24 @@ All measured or read in this session and recorded with their sources in
   after it (`landing`) ends in `~unframe` and a jump instead: SEE shows
   `TAIL name`. Code placement moves timings by a few percent, a taken hub
   branch costing 13 to 20 clocks with its target's place.
+- **The loop cache** (`compile.ogo`, M4): `beginLoop` reserves five longs
+  before a loop and `endLoop` one after it. A loop with no call or trap
+  since its start (`lastImpure`, `tImpure`) and at most `maxCache` longs is
+  cached if no loop around it is; an impure loop's pure inner loops
+  (`cands`) are cached instead. A loop not cached is `squeeze`d: `cut`
+  takes its reservations out and moves every code position the compiler
+  keeps (`branchAt` and the targets, `cs`, `leaves`, `endofs`, `cands`,
+  `tocache`, `lastCall`, `landing`, `lastImpure`). The loaders are written
+  at `;` (`tocache`, `cacheLoop`), when no code moves any more: AUGS and
+  `~tag` (MOV T2, the hub address and length less one in bits 27:20),
+  `~tagcmp` (CMP T2, CTAG), a `~jnz` to the engine's `cmiss`, which copies
+  the loop in by SETQ and RDLONG and sets CTAG, and a jump to $000; the
+  loop's branches to itself become cog addresses and its last long a jump
+  back. CTAG is $1EC; `run` clears it at every entry, the backend's own
+  FCACHE loads coming between runs; a cog `start`ed must clear it too.
+  DOES> and `define` inside an open loop set `cacheOff`, their code
+  having to stay put. SEE shows `CACHE n longs from addr` and `cog`
+  targets.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and

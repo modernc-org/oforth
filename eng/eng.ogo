@@ -25,6 +25,10 @@ func Templates() uint32
 // the compiler's output to, as flexspin assembled them.
 func Refs() uint32
 
+// MissAddr answers the hub address of the routine that copies a cached loop
+// into cog RAM.
+func MissAddr() uint32
+
 func SetTos(v uint32)
 func GetTos() uint32
 func SetDsp(v uint32)

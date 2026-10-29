@@ -20,9 +20,10 @@ It is the third program of size in OctoGo, after
 **Status, 2026-10-28: milestone M2 done, M4 begun.** A REPL on the serial
 line compiles every colon definition to P2 machine code: 80 primitives
 copied in as P2 instructions, literals folded into the instructions that
-use them, small words inlined, a call in tail position made a jump, calls
-with the return address in a register and the return stack in LUT RAM, and
-109 words written in OctoGo that compiled code calls back into. It passes
+use them, small words inlined, a call in tail position made a jump, a loop
+without calls run from cog RAM, calls with the return address in a register
+and the return stack in LUT RAM, and 109 words written in OctoGo that
+compiled code calls back into. It passes
 the CORE and CORE EXT tests of the Forth-2012 test suite on the board, with
 0 errors (`scripts/f2012.sh`), and `SEE` shows a word's machine code as the
 words it was compiled from. There is no file loading yet, no FLOATING, no
@@ -62,11 +63,11 @@ clock frequency. Fewer is faster.
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| an empty `DO LOOP`, 100,000 times | 2,400,020 | 7,200,129 | 3,200,288 |
-| an empty colon word called 100,000 times | 2,400,020 | 13,600,129 | 9,600,288 |
-| the Byte sieve, 8192 flags, one pass | 1,771,993 | 6,390,449 | 13,546,112 |
+| an empty `DO LOOP`, 100,000 times | 800,113 | 7,200,129 | 3,200,288 |
+| an empty colon word called 100,000 times | 800,113 | 13,600,129 | 9,600,288 |
+| the Byte sieve, 8192 flags, one pass | 1,400,057 | 6,390,449 | 13,546,112 |
 | `25 fib`, recursive | 18,080,718 | 53,969,641 | 97,114,008 |
-| `10 fact` 10,000 times, recursive | 15,360,026 | 48,960,129 | 42,800,280 |
+| `10 fact` 10,000 times, recursive | 14,560,026 | 48,960,129 | 42,800,280 |
 
 The sources are in [bench/](bench), the same algorithm in each system's
 dialect; the sieve is BYTE's of 1981 as P2XCForth's archive has it, with
@@ -89,11 +90,11 @@ of them being in this repository. Taken as they are:
   tenth with where its words land in memory (its calls took 15,200,129 in
   one build), and its archive of 2025-07-11 ran within that.
 - OctoForth inlines the empty word since M4, so the second row is its loop
-  alone; `fib` and `fact`, recursive, measure its calls (34 clocks a call
-  and return, 8 more for the frame). Its timings, too, move by a few
-  percent with where code lands, a taken branch in hub RAM costing 13 to
-  20 clocks with its target's place: `fact` took 14,560,026 before M4
-  moved it.
+  alone, which runs from cog RAM, 8 clocks an iteration; `fib` and `fact`,
+  recursive, measure its calls (34 clocks a call and return, 8 more for the
+  frame). Its timings, too, move by a few percent with where code lands, a
+  taken branch in hub RAM costing 13 to 20 clocks with its target's place:
+  `fact` took 15,360,026 in one build of M4.
 
 ## Third parties' benchmarks
 
@@ -109,18 +110,18 @@ around the work, in milliseconds; fewer is faster.
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| Ertl: sieve, 1000 times | 8,335 | does not run | 34,380 |
-| Ertl: bubble sort, 6000 | 12,558 | 82,960 | 78,262 |
-| Ertl: matrix multiply, 64 by 64 | 240 | 1,288 | 1,168 |
+| Ertl: sieve, 1000 times | 5,503 | does not run | 34,380 |
+| Ertl: bubble sort, 6000 | 10,207 | 82,960 | 78,262 |
+| Ertl: matrix multiply, 64 by 64 | 224 | 1,288 | 1,168 |
 | Ertl: `34 fib` | 7,743 | 23,477 | 42,075 |
 | Stanford Perm, 10 times | 784 | does not load | does not fit |
-| Stanford Towers | 1,360 | | |
-| Stanford Queens | 688 | | |
-| Stanford Intmm | 1,680 | | |
-| Stanford Puzzle | 6,623 | | |
-| Stanford Quick | 880 | | |
-| Stanford Bubble | 1,200 | | |
-| Stanford Trees | 3,088 | | |
+| Stanford Towers | 1,376 | | |
+| Stanford Queens | 720 | | |
+| Stanford Intmm | 1,696 | | |
+| Stanford Puzzle | 6,591 | | |
+| Stanford Quick | 864 | | |
+| Stanford Bubble | 992 | | |
+| Stanford Trees | 3,056 | | |
 
 The programs run as their authors wrote them but for what the script
 prints: the matrices are 64 by 64, not 200 by 200, which needs 480 KB;
@@ -141,6 +142,41 @@ on P2XCForth, whose `+LOOP` ends only when the index equals the limit, and
 Fraeman's file does not load there, lacking DOES>; on TAQOZ his arrays,
 about 69 KB, do not fit the 62 KB of room it has. Every program that ran
 gave its expected answer, and each Stanford one passed its own check.
+The host's clock ticks every 16 ms, so a Stanford time moves by a tick or
+two from run to run, and by up to 5% with where the code lands.
+
+## The loop cache
+
+A taken branch costs 13 to 20 clocks in hub RAM, where compiled code
+runs, and 4 in cog RAM. So a loop with no call and no trap in it, at most
+240 longs long, runs from cog RAM $000 to $0EF, which the OctoGo backend
+uses for its own loops between runs of Forth code. Five longs before
+the loop compare its tag, its address and length, with the tag of the
+loop cog RAM holds. If they differ, the engine copies the loop in, one
+long a clock. Then it jumps there, and the loop's last long jumps back to
+hub RAM. A loop inside a cached loop goes with it. When a loop calls a
+word, the loops inside it are cached instead, and the tag spares them the
+copy when they are entered again. A loop not cached costs nothing: its
+reserved longs are taken out when it ends.
+
+Timed by the board's clock, one run of each Stanford program, as the mean
+of eight builds that move the code by one to eight longs:
+
+| | before the cache | with it | |
+| --- | --- | --- | --- |
+| Perm | 15,556,057 | 15,656,625 | +0.6% |
+| Towers | 27,163,482 | 27,392,510 | +0.8% |
+| Queens | 14,237,770 | 14,197,967 | -0.3% |
+| Intmm | 33,771,079 | 33,800,549 | +0.1% |
+| Puzzle | 132,637,964 | 132,084,310 | -0.4% |
+| Quick | 17,798,260 | 17,367,053 | -2.4% |
+| Bubble | 24,069,826 | 19,962,968 | -17.1% |
+| Trees | 61,608,366 | 61,827,443 | +0.4% |
+
+Moving the code alone moves Perm, Towers and Queens by 4 to 5%, so their
+changes are placement, not the cache. Most of Fraeman's loops call his
+small words that use the return stack, which are not inlined, so the
+cache leaves them in hub RAM.
 
 ## Why another Forth for the P2
 

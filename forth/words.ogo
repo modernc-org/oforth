@@ -734,6 +734,11 @@ func octo2(id int) {
 	switch id {
 	case oDoes:
 		inlinable = false
+		if nloops > 0 {
+			// The literal below is a place in this code, which
+			// taking out an open loop's reservations would move.
+			cacheOff = true
+		}
 		// The defining word ends here, telling ~does where the code after
 		// DOES> begins, which is right after this; the literal is made of
 		// its full three longs so that its place is known before it is.

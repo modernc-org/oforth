@@ -14,6 +14,12 @@
 ' that calls saves PB on the return stack first. LIX and LIM are the
 ' innermost DO loop's index and limit, the outer loops' on the return stack.
 '
+' A loop the compiler caches runs from cog RAM $000, the backend's FCACHE
+' area, which is free while a word runs. CTAG names the loop cog RAM holds,
+' by its hub address and length less one in bits 27:20, so that a loop
+' entered again is not copied again; run clears it at every entry, the
+' backend's own loops taking the area between runs.
+'
 ' A trap is a word asking OctoGo for something: "mov rq, #id" and "calld
 ' cont, back". run returns to OctoGo with the request in RQ and the
 ' continuation in CONT; OctoGo serves it and calls run again at CONT with
@@ -32,6 +38,7 @@ CON
   lim   = $1E9          ' and its limit
   t3    = $1EA
   t4    = $1EB
+  ctag  = $1EC          ' the loop in cog RAM, 0 for none
 
   DS0   = 8             ' PTRB of an empty data stack
   DSMAX = 168           ' the first index past the data stack
@@ -51,6 +58,7 @@ PUB run(xt, fresh) : cyc | t, t0
                 mov     t, ptrb
                 mov     ptrb, dsp
                 mov     rq, #0
+                mov     ctag, #0
                 getct   t0
                 calld   back, #enter
                 getct   cyc
@@ -66,7 +74,8 @@ done
   end
 
 ' start runs the code at xt on a free cog, in hub execution, with par in
-' PTRA. It answers the cog or -1.
+' PTRA. It answers the cog or -1. The code must clear CTAG, as run does,
+' before it runs a cached loop.
 PUB start(xt, par) : cog
   cog := coginit(HUBEXEC_NEW, xt, par)
 
@@ -75,6 +84,9 @@ PUB templates() : a
 
 PUB refs() : a
   a := @encref
+
+PUB missAddr() : a
+  a := @cmiss
 
 PUB setTos(v)
   PR0 := v
@@ -792,6 +804,21 @@ exit_b        rdlut   pb, rp
               add     rp, #1
               jmp     pb
 exit_e
+              long    (@nop_e - @nop_b) >> 2 | F_HIDDEN
+              byte    "~nop", 0
+              alignl
+nop_b         nop
+nop_e
+              long    (@tag_e - @tag_b) >> 2 | F_HIDDEN | F_IMM
+              byte    "~tag", 0
+              alignl
+tag_b         mov     t2, #0
+tag_e
+              long    (@tagcmp_e - @tagcmp_b) >> 2 | F_HIDDEN
+              byte    "~tagcmp", 0
+              alignl
+tagcmp_b      cmp     t2, ctag wz
+tagcmp_e
               long    (@unframe_e - @unframe_b) >> 2 | F_HIDDEN
               byte    "~unframe", 0
               alignl
@@ -937,6 +964,15 @@ fcstore_b     wrbyte  tos, #0
 fcstore_e
               long    -1
 
+' The cache's miss: a cached loop's loader comes here with its tag in T2
+' when cog RAM holds another loop. The tag's bits 19:0 are the loop's hub
+' address, and a hub address is bits 19:0 of a register, the rest ignored.
+cmiss         mov     ctag, t2
+              shr     t2, #20                 ' the length less one
+              setq    t2
+              rdlong  0, ctag
+              jmp     #\0
+
 ' What the encoder must make of the templates, as flexspin assembles it, for
 ' the test of the encoder.
 encref        calld   pb, #\$12344
@@ -951,3 +987,8 @@ encref        calld   pb, #\$12344
               rdlong  tos, ##$7FFF0
               mov     rq, #300
               calld   cont, back
+              mov     t2, ##$12340 | 39 << 20
+              cmp     t2, ctag wz
+        if_nz jmp     #\$7FFF8
+              jmp     #\$0
+              nop

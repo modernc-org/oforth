@@ -99,6 +99,11 @@ func define(s []byte, kind, flags uint8) int {
 		abort("dictionary full")
 		return -1
 	}
+	// A header made while a definition compiles may put code into it,
+	// which taking out an open loop's reservations must not move.
+	if nloops > 0 {
+		cacheOff = true
+	}
 	w := nwords
 	nwords++
 	words[w].name = int32(nnames)
