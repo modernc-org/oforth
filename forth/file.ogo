@@ -1,0 +1,392 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"unsafe"
+)
+
+// Files, which INCLUDE and the FILE words read: a table of the open ones,
+// each read through a buffer of its own from where it lives. That is the
+// host's directory over 9P for now (nine.ogo); the SD card is to come
+// behind the same functions, fileOpen, fileByte and fileClose. A file's
+// fileid is its place in the table plus one, so that none is 0, the
+// console's SOURCE-ID, or -1, EVALUATE's.
+
+const (
+	maxFiles = 8
+	fileBufN = 512
+	maxName  = 64
+
+	famBin    = 4          // what BIN adds to R/O, which is 0
+	iorIO     = 0xffffffdb // ANS's codes: -37, a file's I/O failed
+	iorNoFile = 0xffffffda // and -38, no such file
+)
+
+type file struct {
+	open   bool
+	off    uint32 // where in the file the next read of buf starts
+	pos, n int    // buf[pos:n] is what was read and not yet taken
+	buf    [fileBufN]byte
+	name   [maxName]byte // for an error's message
+	nname  int
+}
+
+var files [maxFiles]file
+
+func fidOf(f int) uint32 { return uint32(2 + f) }
+
+// fileOf answers the file of a fileid, if it is an open one.
+func fileOf(id uint32) (int, bool) {
+	f := int(id) - 1
+	if f < 0 || f >= maxFiles || !files[f].open {
+		return 0, false
+	}
+	return f, true
+}
+
+// fileOpen opens the file name for reading and answers it, or -1, what
+// went wrong being in nineErr.
+func fileOpen(name []byte) int {
+	for f := 0; f < maxFiles; f++ {
+		if files[f].open {
+			continue
+		}
+		if !nineOpen(fidOf(f), name) {
+			return -1
+		}
+		files[f].open = true
+		files[f].off = 0
+		files[f].pos = 0
+		files[f].n = 0
+		files[f].nname = copy(files[f].name[:], name)
+		return f
+	}
+	setNineErr("too many open files")
+	return -1
+}
+
+func fileClose(f int) {
+	if files[f].open {
+		files[f].open = false
+		nineClunk(fidOf(f))
+	}
+}
+
+// fileByte answers the next byte of f, -1 at its end and -2 on an error.
+// Right after a byte, files[f].pos-- gives it back.
+func fileByte(f int) int {
+	if files[f].pos == files[f].n {
+		k := nineRead(fidOf(f), files[f].off, files[f].buf[:])
+		if k < 0 {
+			return -2
+		}
+		if k == 0 {
+			return -1
+		}
+		files[f].off += uint32(k)
+		files[f].pos = 0
+		files[f].n = k
+	}
+	c := files[f].buf[files[f].pos]
+	files[f].pos++
+	return int(c)
+}
+
+// fileRead reads into p what f has next, as much as p holds, and answers
+// how much, less only at the end of the file, or -1 on an error.
+func fileRead(f int, p []byte) int {
+	n := 0
+	for n < len(p) {
+		if files[f].pos == files[f].n {
+			c := fileByte(f)
+			if c == -1 {
+				break
+			}
+			if c < 0 {
+				return -1
+			}
+			p[n] = byte(c)
+			n++
+			continue
+		}
+		k := copy(p[n:], files[f].buf[files[f].pos:files[f].n])
+		files[f].pos += k
+		n += k
+	}
+	return n
+}
+
+// How a line fileLine read ended.
+const (
+	lineEnd  = iota // at its end, which was taken
+	lineLong        // where p was full, the rest still to read
+	lineEOF         // there was none: the file is at its end
+	lineErr         // the file could not be read
+)
+
+// fileLine reads the next line of f into p and answers its length and how
+// it ended. A line ends at LF, CR or CR LF, which are not part of it, and
+// the last one may end at the end of the file.
+func fileLine(f int, p []byte) (int, int) {
+	n := 0
+	for {
+		c := fileByte(f)
+		switch {
+		case c == -1:
+			if n == 0 {
+				return 0, lineEOF
+			}
+			return n, lineEnd
+		case c < 0:
+			return n, lineErr
+		case c == '\n':
+			return n, lineEnd
+		case c == '\r':
+			d := fileByte(f)
+			if d >= 0 && d != '\n' {
+				files[f].pos--
+			}
+			return n, lineEnd
+		}
+		if n == len(p) {
+			files[f].pos--
+			return n, lineLong
+		}
+		p[n] = byte(c)
+		n++
+	}
+}
+
+// memory answers the n bytes at a.
+func memory(a, n uint32) []byte {
+	return unsafe.Slice((*byte)(unsafe.Pointer(uintptr(a))), int(n))
+}
+
+// The files being included, the innermost last, each with the line it is
+// at in a buffer of its own: a line must outlast the inclusion of another
+// file from it.
+const maxIncl = 8
+
+var (
+	incl     [maxIncl]struct{ f, line int32 }
+	inclLine [maxIncl][256]byte
+	nincl    int
+)
+
+// included opens the file name and interprets it.
+func included(name []byte) {
+	if len(name) == 0 {
+		abort("a file name is missing")
+		return
+	}
+	f := fileOpen(name)
+	if f < 0 {
+		abortFile(name)
+		return
+	}
+	includeFile(f)
+}
+
+// includeFile interprets f from its next line to its end and closes it,
+// the input source being restored after. An error in it is reported with
+// the file's name and the line's number, the innermost file's.
+func includeFile(f int) {
+	if nincl == maxIncl {
+		fileClose(f)
+		abort("files included too deep")
+		return
+	}
+	k := nincl
+	nincl++
+	incl[k].f = int32(f)
+	incl[k].line = 0
+	s, sa, id, in := src, srcAddr, sourceID, toIn()
+	for !aborted && refillFile(k) {
+		interpret()
+	}
+	if aborted && nwhere == 0 {
+		where(k)
+	}
+	nincl--
+	fileClose(f)
+	src, srcAddr, sourceID = s, sa, id
+	setToIn(in)
+}
+
+// refillFile makes the next line of the k-th file included the input
+// source, and answers false at the end of the file or on an error.
+func refillFile(k int) bool {
+	f := int(incl[k].f)
+	n, how := fileLine(f, inclLine[k][:])
+	switch how {
+	case lineEOF:
+		return false
+	case lineErr:
+		abortFile(files[f].name[:files[f].nname])
+		return false
+	case lineLong:
+		incl[k].line++
+		abort("line too long")
+		return false
+	}
+	incl[k].line++
+	src = inclLine[k][:n]
+	srcAddr = uint32(uintptr(unsafe.Pointer(&inclLine[k][0])))
+	sourceID = uint32(f + 1)
+	setToIn(0)
+	return true
+}
+
+// inFile answers the k of the file included that is the input source, or
+// -1 when it is no file.
+func inFile() int {
+	if nincl > 0 && sourceID == uint32(incl[nincl-1].f+1) {
+		return nincl - 1
+	}
+	return -1
+}
+
+// comment skips a ( comment, which in a file goes on over its lines.
+func comment() {
+	for {
+		s := parse(')')
+		if parsed+len(s) < len(src) {
+			return
+		}
+		k := inFile()
+		if k < 0 || !refillFile(k) {
+			return
+		}
+	}
+}
+
+// Where an error was found, "name:line: ", for line to write before it.
+var (
+	errWhere [maxName + 16]byte
+	nwhere   int
+)
+
+func where(k int) {
+	f := int(incl[k].f)
+	nwhere = copy(errWhere[:], files[f].name[:files[f].nname])
+	errWhere[nwhere] = ':'
+	nwhere++
+	var d [10]byte
+	i := len(d)
+	for v := uint32(incl[k].line); ; v /= 10 {
+		i--
+		d[i] = byte('0' + v%10)
+		if v < 10 {
+			break
+		}
+	}
+	nwhere += copy(errWhere[nwhere:], d[i:])
+	errWhere[nwhere] = ':'
+	errWhere[nwhere+1] = ' '
+	nwhere += 2
+}
+
+// abortFile aborts for the file name, with what went wrong.
+func abortFile(name []byte) {
+	if aborted {
+		return
+	}
+	abortName(name, ": ")
+	nmore = copy(errMore[:], nineErr[:nnineErr])
+}
+
+func flag(b bool) uint32 {
+	if b {
+		return 0xffffffff
+	}
+	return 0
+}
+
+// octoFile executes the file words.
+func octoFile(id int) {
+	switch id {
+	case oIncluded:
+		n := pop()
+		included(memory(pop(), n))
+	case oInclude:
+		s := nameOrAbort()
+		if !aborted {
+			included(s)
+		}
+	case oIncludeFile:
+		f, ok := fileOf(pop())
+		if !ok {
+			abort("not an open file")
+			return
+		}
+		includeFile(f)
+	case oOpenFile:
+		fam := pop()
+		n := pop()
+		s := memory(pop(), n)
+		if fam&^famBin != 0 {
+			push(0)
+			push(iorIO) // only R/O, for now
+			return
+		}
+		f := fileOpen(s)
+		if f < 0 {
+			push(0)
+			push(iorNoFile)
+			return
+		}
+		push(uint32(f + 1))
+		push(0)
+	case oCloseFile:
+		f, ok := fileOf(pop())
+		if !ok {
+			push(iorIO)
+			return
+		}
+		fileClose(f)
+		push(0)
+	case oReadFile:
+		f, ok := fileOf(pop())
+		n := pop()
+		p := memory(pop(), n)
+		k := -1
+		if ok {
+			k = fileRead(f, p)
+		}
+		if k < 0 {
+			push(0)
+			push(iorIO)
+			return
+		}
+		push(uint32(k))
+		push(0)
+	case oReadLine:
+		f, ok := fileOf(pop())
+		n := pop()
+		p := memory(pop(), n)
+		how := lineErr
+		k := 0
+		if ok {
+			k, how = fileLine(f, p)
+		}
+		switch how {
+		case lineEOF:
+			push(0)
+			push(0)
+			push(0)
+		case lineErr:
+			push(0)
+			push(0)
+			push(iorIO)
+		default:
+			push(uint32(k))
+			push(flag(true))
+			push(0)
+		}
+	case oBin:
+		push(pop() | famBin)
+	default:
+		abort("no such OctoGo word")
+	}
+}

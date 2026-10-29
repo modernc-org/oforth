@@ -320,10 +320,13 @@ func interpret() {
 	}
 }
 
-// The name an error is about.
+// The name an error is about, and what more there is to say, a file
+// server's words.
 var (
 	errName [32]byte
 	nerr    int
+	errMore [64]byte
+	nmore   int
 )
 
 func abortName(s []byte, msg string) {
@@ -360,6 +363,8 @@ func line() bool {
 	aborted = false
 	quiet = false
 	nerr = 0
+	nmore = 0
+	nwhere = 0
 	fromTib()
 	interpret()
 	checkStacks()
@@ -367,12 +372,14 @@ func line() bool {
 		return true
 	}
 	if !quiet {
+		typeBytes(errWhere[:nwhere])
 		if nerr > 0 {
 			typeBytes(errName[:nerr])
 		} else {
 			typeStr("error: ")
 		}
 		typeStr(abortS)
+		typeBytes(errMore[:nmore])
 		emit('\n')
 	}
 	reset()
@@ -409,6 +416,36 @@ func Evaluate(s string) bool {
 	return true
 }
 
+// Input that came before a file server's reply (nine.ogo), which accept
+// and KEY take before what the console brings next. What is beyond its
+// room is lost.
+var (
+	ahead  [1024]byte
+	nahead int
+	pahead int
+)
+
+func typedAhead(c byte) {
+	if nahead < len(ahead) {
+		ahead[nahead] = c
+		nahead++
+	}
+}
+
+// inKey answers the next byte of input.
+func inKey() int {
+	if pahead < nahead {
+		c := ahead[pahead]
+		pahead++
+		if pahead == nahead {
+			pahead = 0
+			nahead = 0
+		}
+		return int(c)
+	}
+	return Key()
+}
+
 // accept reads a line of at most max bytes from Key to a, echoing it, and
 // answers its length; it handles backspace, and takes a TAB for a space. A CR or LF ends it; an LF right
 // after a CR is the same line's end.
@@ -420,7 +457,7 @@ func accept(a uint32, max int) int {
 		return 0
 	}
 	for {
-		c := byte(Key())
+		c := byte(inKey())
 		if c == '\n' && lastCR {
 			lastCR = false
 			continue

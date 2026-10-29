@@ -1,0 +1,285 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"p2"
+)
+
+// The host's files, read by 9P over the console's serial line: the loader
+// serves a directory so when it is given one, ogo loadp2 -t -9 DIR. A
+// message goes out after the two bytes $FF $01, which tell the loader that
+// one follows, and the reply comes back with no mark before it, among what
+// is typed: input that was on its way, or typed while the reply was, comes
+// before it. The reply is found by its first seven bytes, its size, type
+// and tag, its size having two zero bytes that no text has, and the bytes
+// before them wait in ahead for accept and KEY. A message is the 9P2000
+// one: its size in four bytes, little-endian as every number in it, the
+// size included, then its type, its tag and what the type has.
+
+// Avail answers whether Key has a byte waiting, which the client asks
+// before it reads a reply, giving up when nothing came for a while.
+var Avail func() bool
+
+const (
+	nineMsize = 536 // a message's most, a read of 512 bytes and its header
+	nineRoot  = 1   // the fid of the directory served; a file's is 2 and up
+
+	tVersion = 100
+	tAttach  = 104
+	rError   = 107
+	tWalk    = 110
+	tOpen    = 112
+	tRead    = 116
+	tClunk   = 120
+)
+
+var (
+	nine     [nineMsize]byte // the message out, then the reply
+	nineMax  = nineMsize     // the largest message the host takes
+	nineUp   bool            // versioned and attached
+	nineWait = uint32(3000)  // how long a reply may take, in ms
+	nineErr  [64]byte        // what went wrong, the host's words if it said
+	nnineErr int
+
+	nineProto = [...]byte{'9', 'P', '2', '0', '0', '0'}
+	nineUser  = [...]byte{'u', 's', 'e', 'r'}
+)
+
+func put1(at int, v uint32) int {
+	nine[at] = byte(v)
+	return at + 1
+}
+
+func put2(at int, v uint32) int {
+	nine[at] = byte(v)
+	nine[at+1] = byte(v >> 8)
+	return at + 2
+}
+
+func put4(at int, v uint32) int {
+	at = put2(at, v)
+	return put2(at, v>>16)
+}
+
+// putStr puts s as 9P has a string, its length in two bytes first, and
+// answers where it ends, or -1 when it does not fit.
+func putStr(at int, s []byte) int {
+	if at+2+len(s) > nineMax {
+		return -1
+	}
+	at = put2(at, uint32(len(s)))
+	at += copy(nine[at:], s)
+	return at
+}
+
+func get2(at int) uint32 { return uint32(nine[at]) | uint32(nine[at+1])<<8 }
+
+func get4(at int) uint32 { return get2(at) | get2(at+2)<<16 }
+
+// header begins a message of type t, after the room for its size.
+func header(t uint32) int {
+	at := put1(4, t)
+	return put2(at, 1) // the tag; one message is ever in flight
+}
+
+func setNineErr(s string) {
+	nnineErr = 0
+	for i := 0; i < len(s) && i < len(nineErr); i++ {
+		nineErr[i] = s[i]
+		nnineErr++
+	}
+}
+
+// rawOut writes c to the console as it is, or, in a test, where the output
+// goes.
+func rawOut(c byte) {
+	if Console {
+		p2.WriteByte(c)
+		return
+	}
+	if nout < len(out) {
+		out[nout] = c
+		nout++
+	}
+}
+
+// keyWithin answers the console's next byte, or -1 when none came within
+// nineWait.
+func keyWithin() int {
+	t := p2.GetMs()
+	for !Avail() {
+		if p2.GetMs()-t >= nineWait {
+			return -1
+		}
+	}
+	return Key()
+}
+
+// rpc sends the message in nine, n bytes, and reads the reply into it. It
+// answers whether the reply is the one of the message's type, keeping what
+// went wrong in nineErr if not: the host's error, or that no host answered.
+// A host that did not answer, or answered nonsense, is asked for a version
+// again by the next message.
+func rpc(n int) bool {
+	if Key == nil || Avail == nil {
+		setNineErr("no console")
+		return false
+	}
+	put4(0, uint32(n))
+	t := nine[4]
+	tag := get2(5)
+	rawOut(0xff)
+	rawOut(0x01)
+	for i := 0; i < n; i++ {
+		rawOut(nine[i])
+	}
+	size := 0
+	for i := 0; i < 7 || i < size; i++ {
+		c := keyWithin()
+		if c < 0 {
+			nineUp = false
+			setNineErr("no file server: load with ogo loadp2 -9 DIR")
+			return false
+		}
+		nine[i] = byte(c)
+		if i != 6 {
+			continue
+		}
+		size = int(get4(0))
+		if size < 7 || size > nineMax || nine[4] != t+1 && nine[4] != rError || get2(5) != tag {
+			// Not the reply's start yet: its first byte was typed.
+			typedAhead(nine[0])
+			copy(nine[:6], nine[1:7])
+			size = 0
+			i--
+		}
+	}
+	switch nine[4] {
+	case t + 1:
+		return true
+	case rError:
+		m := int(get2(7))
+		if m > size-9 {
+			m = size - 9
+		}
+		nnineErr = copy(nineErr[:], nine[9:9+m])
+	default:
+		nineUp = false
+		setNineErr("bad reply from the file server")
+	}
+	return false
+}
+
+// nineStart agrees on the version with the host and attaches to its
+// directory, once.
+func nineStart() bool {
+	if nineUp {
+		return true
+	}
+	nineMax = nineMsize
+	at := header(tVersion)
+	put2(5, 0xffff) // a version's tag is NOTAG
+	at = put4(at, nineMsize)
+	at = putStr(at, nineProto[:])
+	if !rpc(at) {
+		return false
+	}
+	m := int(get4(7))
+	if m < 64 {
+		setNineErr("the file server's messages are too short")
+		return false
+	}
+	if m < nineMax {
+		nineMax = m
+	}
+	at = header(tAttach)
+	at = put4(at, nineRoot)
+	at = put4(at, 0xffffffff) // no authentication
+	at = putStr(at, nineUser[:])
+	at = putStr(at, nil)
+	if !rpc(at) {
+		return false
+	}
+	nineUp = true
+	return true
+}
+
+// nineOpen walks fid from the root to the file name, its parts parted by
+// slashes, and opens it for reading.
+func nineOpen(fid uint32, name []byte) bool {
+	if !nineStart() {
+		return false
+	}
+	at := header(tWalk)
+	at = put4(at, nineRoot)
+	at = put4(at, fid)
+	nat := at
+	at += 2
+	n := 0
+	for i := 0; i < len(name); {
+		j := i
+		for j < len(name) && name[j] != '/' {
+			j++
+		}
+		if j > i {
+			if n == 16 || at < 0 {
+				setNineErr("the name is too long")
+				return false
+			}
+			at = putStr(at, name[i:j])
+			n++
+		}
+		i = j + 1
+	}
+	if at < 0 {
+		setNineErr("the name is too long")
+		return false
+	}
+	put2(nat, uint32(n))
+	if !rpc(at) {
+		return false
+	}
+	if int(get2(7)) != n {
+		// A walk that stopped short made no fid.
+		setNineErr("file does not exist")
+		return false
+	}
+	at = header(tOpen)
+	at = put4(at, fid)
+	at = put1(at, 0) // OREAD
+	if !rpc(at) {
+		nineClunk(fid)
+		return false
+	}
+	return true
+}
+
+// nineRead reads into p what the file fid has from off on, at most a
+// message's worth, and answers how much: 0 at the end, -1 on an error.
+func nineRead(fid, off uint32, p []byte) int {
+	n := len(p)
+	if n > nineMax-11 {
+		n = nineMax - 11
+	}
+	at := header(tRead)
+	at = put4(at, fid)
+	at = put4(at, off)
+	at = put4(at, 0) // the offset's high half
+	at = put4(at, uint32(n))
+	if !rpc(at) {
+		return -1
+	}
+	c := int(get4(7))
+	if c > n {
+		c = n
+	}
+	return copy(p[:c], nine[11:11+c])
+}
+
+// nineClunk lets the host forget fid.
+func nineClunk(fid uint32) {
+	at := header(tClunk)
+	at = put4(at, fid)
+	rpc(at)
+}

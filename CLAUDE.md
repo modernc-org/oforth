@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (nineteen tests by M4); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty tests by M4); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -52,9 +52,11 @@ times as fast, Ertl's sieve 1.5, Fraeman's Bubble 1.2, nothing lost
 elsewhere, as the mean of eight builds shifting the code showed; then
 REP for a DO loop in cog RAM with no branch in its body, 2026-10-29: the
 empty loop 2 clocks an iteration, against 8, Ertl's matrix
-multiplication 224 ms to 208. Next in M4: INCLUDE (the card being out,
-over the serial line or from the card when it is back). Not yet: a host
-twin. The repository is on
+multiplication 224 ms to 208; then INCLUDE, 2026-10-29, reading the
+host's files by 9P over the serial line, which the loader serves (`ogo
+loadp2 -t -9 DIR`), with the read-only FILE words over the same layer.
+Next: writing files over 9P, and the SD card behind the same layer when
+a card is back. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -94,7 +96,8 @@ The files:
   sh reads it as it goes. `scripts/p2xc.sh P2XCForthC.zip` builds P2XCForth for the EDGE into
   `build/p2xc` with its three printed changes; `scripts/f2012.sh` fetches
   the Forth-2012 suite at a pinned commit into `build/f2012`, checks its
-  hashes, and runs it. `build/` is ignored: the suite and P2XCForth are
+  hashes, and has the REPL INCLUDE it, `build/f2012` served by the
+  loader's `-9`. `build/` is ignored: the suite and P2XCForth are
   third parties' and never committed.
 - `probe/m0`: the probe, a program of its own (`main.ogo` and the Spin2
   object `eng`), research and not the Forth: it prints clocks, and its
@@ -154,6 +157,11 @@ section 9 has the reasons:
 - The dictionary is hashed now; an EXIT-hooked task switch only later and
   only if measured nearly free.
 - A register-allocating kernel, Mecrisp's, is considered after M2.
+- INCLUDE reads the host's files over the serial line now, and the SD
+  card later behind the same file layer (the user's choice of
+  2026-10-29, the card being out of the slot). The serial line's way is
+  9P, which the loader `ogo` embeds serves with `-9 DIR`, so that no host
+  program of OctoForth's own is needed.
 
 The bar is P2XCForth's XBYTE core, not TAQOZ: section 3.6's table has the
 clocks per operation of all three. M2 runs the Byte sieve, the empty loop
@@ -276,7 +284,23 @@ All measured or read in this session and recorded with their sources in
   executes, a `switch` in `octo`, with `needs` giving how many cells each
   takes, checked before it runs (`octo` has M1's words, `octo2` M2's);
   `see.ogo` SEE, which reads code back by matching the templates, longest
-  first, with immediates, AUGS and branch targets decoded.
+  first, with immediates, AUGS and branch targets decoded; `file.ogo` the
+  file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
+  `nine.ogo` the 9P client under it.
+- **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
+  each read through a buffer of 512 bytes by `fileByte`, the layer the SD
+  card is to come behind (`fileOpen`, `fileByte`, `fileClose`); a fileid
+  is the place plus one. The 9P client sends a message after $FF $01, which
+  tells the loader one follows, and finds the reply among what the
+  console brings by its first seven bytes (size, type, tag: the size's two
+  zero bytes no text has), the bytes before them being typed input, which
+  waits in `ahead` for `inKey` (accept, KEY). A reply that does not come
+  within `nineWait`, 3 s, means no file server; the next message begins
+  with a version again. `includeFile` keeps a line buffer for each of
+  eight levels, SOURCE-ID the fileid, REFILL and `(` reading on in the
+  file (`inFile`, `refillFile`), and an error is written after `where`'s
+  "name:line: ". `TestInclude` serves the client from a 9P server of its
+  own in the test, through `Key` and `Avail`.
 - **The input source** is `src`, a slice over `tib` or over what EVALUATE
   was given, `srcAddr` where it is, and `>IN` a data-space cell
   (`cellToIn`); `parse`, `parseName` and `skip` read it. EVALUATE saves and
@@ -360,7 +384,8 @@ flock -w 900 /tmp/p2-board.lock ogo test ./forth # the tests, on the board, seco
 flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
-scripts/f2012.sh                # the Forth-2012 CORE and CORE EXT tests on the board, a minute; errors: 0
+scripts/f2012.sh                # the Forth-2012 CORE and CORE EXT tests on the board, INCLUDEd by 9P, half a minute; errors: 0
+ogo loadp2 -t -9 . -b 230400 oforth.binary       # the REPL with INCLUDE serving this directory (under the lock)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes
 ```

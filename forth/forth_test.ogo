@@ -477,3 +477,275 @@ func TestRep(t *testing.T) {
 	check(t, ": rn6 0 10 0 DO 1+ DUP 5 = IF LEAVE THEN LOOP ; rn6 .", "5 ")
 	checkNot(t, "SEE rn6", "REP ")
 }
+
+// The host's files for TestInclude: a 9P server in the test, which reads
+// the messages the client writes into out, takes them out of it, and
+// answers by Key, as the loader does over the serial line. Its messages
+// are shorter than the client's, so that reads are cut to its size.
+type hostFile struct {
+	name string
+	text string
+}
+
+const hostMsize = 512
+
+var (
+	hostFiles = [...]hostFile{
+		{"a.fth", ": ia 1 2 + ;\nia .\n"},
+		{"dir/b.fth", "INCLUDE a.fth\r\n: ib ia 10 * ; ib .\r\n"},
+		{"c.fth", "1 .\nnosuch\n3 .\n"},
+		{"d.fth", "( a comment\nover lines ) 8 .\nSOURCE-ID 0> .\nREFILL\n7 .\n"},
+		{"e.txt", "one\r\ntwo\rthree\nlast"},
+		{"big.fth", ""}, // hostBig
+	}
+	hostBig   [3000]byte
+	nbig      int
+	hostFid   [16]int // the file a fid stands for, -1 for none, -2 the root
+	hostOut   [hostMsize]byte
+	nhost     int
+	phost     int
+	hostSays  bool   // whether the host answers at all
+	hostTyped string // what is typed before the next reply
+)
+
+// hostRead copies n bytes of the file i from off into the reply.
+func hostRead(i, off, n int) {
+	for k := off; k < off+n; k++ {
+		if hostFiles[i].name == "big.fth" {
+			hostOut[nhost] = hostBig[k]
+		} else {
+			hostOut[nhost] = hostFiles[i].text[k]
+		}
+		nhost++
+	}
+}
+
+func hostLen(i int) int {
+	if hostFiles[i].name == "big.fth" {
+		return nbig
+	}
+	return len(hostFiles[i].text)
+}
+
+func hostPut(v uint32, n int) {
+	for i := 0; i < n; i++ {
+		hostOut[nhost] = byte(v >> (8 * i))
+		nhost++
+	}
+}
+
+func hostGet(m []byte, at, n int) uint32 {
+	v := uint32(0)
+	for i := n - 1; i >= 0; i-- {
+		v = v<<8 | uint32(m[at+i])
+	}
+	return v
+}
+
+func hostStr(s string) {
+	hostPut(uint32(len(s)), 2)
+	for i := 0; i < len(s); i++ {
+		hostOut[nhost] = s[i]
+		nhost++
+	}
+}
+
+func hostReply(t byte, tag uint32) {
+	nhost = 4
+	hostPut(uint32(t), 1)
+	hostPut(tag, 2)
+}
+
+// hostServe answers the message the client wrote last, if there is one,
+// and if the host is to answer at all.
+func hostServe() {
+	if phost < nhost {
+		return
+	}
+	at := -1
+	for i := 0; i+6 <= nout; i++ {
+		if out[i] == 0xff && out[i+1] == 1 && i+2+int(hostGet(out[:], i+2, 4)) == nout {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		return
+	}
+	m := out[at+2 : nout]
+	nout = at
+	if !hostSays {
+		return
+	}
+	tag := hostGet(m, 5, 2)
+	switch m[4] {
+	case tVersion:
+		hostReply(tVersion+1, tag)
+		hostPut(hostMsize, 4)
+		hostStr("9P2000")
+	case tAttach:
+		hostFid[hostGet(m, 7, 4)] = -2
+		hostReply(tAttach+1, tag)
+		hostPut(0, 13)
+	case tWalk:
+		newfid := hostGet(m, 11, 4)
+		nw := int(hostGet(m, 15, 2))
+		var name [64]byte
+		n := 0
+		p := 17
+		for i := 0; i < nw; i++ {
+			l := int(hostGet(m, p, 2))
+			if i > 0 {
+				name[n] = '/'
+				n++
+			}
+			n += copy(name[n:], m[p+2:p+2+l])
+			p += 2 + l
+		}
+		for i := range hostFiles {
+			if same(name[:n], hostFiles[i].name) {
+				hostFid[newfid] = i
+				hostReply(tWalk+1, tag)
+				hostPut(uint32(nw), 2)
+				for j := 0; j < nw; j++ {
+					hostPut(0, 13)
+				}
+				break
+			}
+		}
+		if hostFid[newfid] < 0 {
+			hostReply(rError, tag)
+			hostStr("file does not exist")
+		}
+	case tOpen:
+		hostReply(tOpen+1, tag)
+		hostPut(0, 13)
+		hostPut(0, 4)
+	case tRead:
+		i := hostFid[hostGet(m, 7, 4)]
+		off := int(hostGet(m, 11, 4))
+		n := int(hostGet(m, 19, 4))
+		if n > hostMsize-11 {
+			n = hostMsize - 11
+		}
+		if off > hostLen(i) {
+			off = hostLen(i)
+		}
+		if off+n > hostLen(i) {
+			n = hostLen(i) - off
+		}
+		hostReply(tRead+1, tag)
+		hostPut(uint32(n), 4)
+		hostRead(i, off, n)
+	case tClunk:
+		hostFid[hostGet(m, 7, 4)] = -1
+		hostReply(tClunk+1, tag)
+	}
+	phost = 0
+	nh := nhost
+	nhost = 0
+	hostPut(uint32(nh), 4)
+	nhost = nh
+	if k := len(hostTyped); k > 0 {
+		for i := nhost - 1; i >= 0; i-- {
+			hostOut[i+k] = hostOut[i]
+		}
+		for i := 0; i < k; i++ {
+			hostOut[i] = hostTyped[i]
+		}
+		nhost += k
+		hostTyped = ""
+	}
+}
+
+func hostAvail() bool {
+	hostServe()
+	return phost < nhost
+}
+
+func hostKey() int {
+	hostServe()
+	if phost < nhost {
+		c := hostOut[phost]
+		phost++
+		return int(c)
+	}
+	return '\r'
+}
+
+// hostOpen answers how many fids stand for files.
+func hostOpen() int {
+	n := 0
+	for _, f := range hostFid {
+		if f >= 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func TestInclude(t *testing.T) {
+	for i := range hostFid {
+		hostFid[i] = -1
+	}
+	hostBig[0] = '0'
+	hostBig[1] = '\n'
+	nbig = 2
+	for nbig+6 <= len(hostBig) {
+		hostBig[nbig] = '1'
+		hostBig[nbig+1] = '+'
+		hostBig[nbig+2] = '\n'
+		nbig += 3
+	}
+	hostBig[nbig] = '.'
+	hostBig[nbig+1] = '\n'
+	nbig += 2
+	Key = hostKey
+	Avail = hostAvail
+	hostSays = true
+	nineUp = false
+	check(t, "INCLUDE a.fth ia .", "3 3 ")
+	check(t, "S\" dir/b.fth\" INCLUDED", "3 30 ")
+	check(t, "INCLUDE c.fth", "1 c.fth:2: nosuch ?\n")
+	check(t, "INCLUDE d.fth .", "8 -1 7 -1 ")
+	check(t, "INCLUDE nofile.fth", "nofile.fth: file does not exist\n")
+	check(t, "INCLUDE big.fth", "998 ")
+	check(t, "S\" e.txt\" R/O OPEN-FILE . VALUE fe", "0 ")
+	check(t, "PAD 80 fe READ-LINE . . PAD SWAP TYPE", "0 -1 one")
+	check(t, "PAD 80 fe READ-LINE . . PAD SWAP TYPE", "0 -1 two")
+	check(t, "PAD 2 fe READ-LINE . . PAD SWAP TYPE", "0 -1 th")
+	check(t, "PAD 80 fe READ-LINE . . PAD SWAP TYPE", "0 -1 ree")
+	check(t, "PAD 80 fe READ-LINE . . PAD SWAP TYPE", "0 -1 last")
+	check(t, "PAD 80 fe READ-LINE . . .", "0 0 0 ")
+	check(t, "fe CLOSE-FILE .", "0 ")
+	check(t, "fe CLOSE-FILE .", "-37 ")
+	check(t, "S\" a.fth\" R/O BIN OPEN-FILE DROP VALUE fa PAD 4 fa READ-FILE . . PAD 4 TYPE", "0 4 : ia")
+	check(t, "fa CLOSE-FILE .", "0 ")
+	check(t, "S\" a.fth\" R/O OPEN-FILE DROP INCLUDE-FILE", "3 ")
+	check(t, "S\" nofile.fth\" R/O OPEN-FILE . .", "-38 0 ")
+	// What is typed while a reply is on its way comes before it, and is
+	// the console's next input.
+	hostTyped = "7 6 * .\r"
+	check(t, "INCLUDE a.fth", "3 ")
+	ResetOutput()
+	ntib = accept(uint32(uintptr(unsafe.Pointer(&tib[0]))), len(tib))
+	line()
+	if got := Output(); !same(got, "7 6 * . 42 ") {
+		printf("typed ahead: got \"")
+		show(got)
+		printf("\"\n")
+		t.Fail()
+	}
+	if n := hostOpen(); n != 0 {
+		printf("%d files left open on the host\n", n)
+		t.Fail()
+	}
+	// With no file server.
+	hostSays = false
+	nineUp = false
+	nineWait = 20
+	check(t, "INCLUDE a.fth", "a.fth: no file server: load with ogo loadp2 -9 DIR\n")
+	nineWait = 3000
+	Key = nil
+	Avail = nil
+}

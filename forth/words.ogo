@@ -122,6 +122,14 @@ const (
 	oDeferStore
 	oSQuoteEsc
 	oRecursive
+	oIncluded
+	oInclude
+	oIncludeFile
+	oOpenFile
+	oCloseFile
+	oReadFile
+	oReadLine
+	oBin
 )
 
 // Words the compiler compiles where it makes something of its own.
@@ -256,6 +264,15 @@ func octoWords() {
 	octoWord("DEFER!", oDeferStore, 0)
 	octoWord("S\\\"", oSQuoteEsc, fImmediate)
 	octoWord("RECURSIVE", oRecursive, ic)
+	octoWord("INCLUDED", oIncluded, 0)
+	octoWord("INCLUDE", oInclude, 0)
+	octoWord("INCLUDE-FILE", oIncludeFile, 0)
+	octoWord("OPEN-FILE", oOpenFile, 0)
+	octoWord("CLOSE-FILE", oCloseFile, 0)
+	octoWord("READ-FILE", oReadFile, 0)
+	octoWord("READ-LINE", oReadLine, 0)
+	octoWord("BIN", oBin, 0)
+	constWord("R/O", 0)
 	constWord("BASE", dataBase()+cellBase*4)
 	constWord("STATE", dataBase()+cellState*4)
 	constWord(">IN", dataBase()+cellToIn*4)
@@ -426,6 +443,12 @@ func needs(id int) int {
 		return 2
 	case oRestoreInput:
 		return 5
+	case oIncluded:
+		return 2
+	case oIncludeFile, oCloseFile, oBin:
+		return 1
+	case oOpenFile, oReadFile, oReadLine:
+		return 3
 	}
 	return 0
 }
@@ -470,7 +493,7 @@ func octo(id int) {
 			push(0xffffffff)
 			return
 		}
-		push(uint32(Key()))
+		push(uint32(inKey()))
 	case oWords:
 		listWords()
 	case oColon:
@@ -485,7 +508,7 @@ func octo(id int) {
 			words[nwords-1].flags |= fImmediate
 		}
 	case oParen:
-		parse(')')
+		comment()
 	case oBackslash:
 		setToIn(len(src))
 	case oDotParen:
@@ -1050,7 +1073,9 @@ func octo2(id int) {
 		stringHere(s)
 		compileLit(a)
 	case oRefill:
-		push(0)
+		// A file's next line; the console's REFILL is not there yet.
+		k := inFile()
+		push(flag(k >= 0 && refillFile(k)))
 	case oSee:
 		w := findOrAbort()
 		if w >= 0 {
@@ -1131,7 +1156,7 @@ func octo2(id int) {
 		push(uint32(uintptr(unsafe.Pointer(&sbuf[0]))))
 		push(uint32(n))
 	default:
-		abort("no such OctoGo word")
+		octoFile(id)
 	}
 }
 
