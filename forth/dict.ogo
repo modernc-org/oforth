@@ -21,6 +21,8 @@ const (
 	kValue         // a VALUE: fetches the cell at val
 	kDefer         // a DEFER: executes the xt in the cell at val
 	kMarker        // a MARKER: takes everything back to marks[val]
+	k2Const        // a 2CONSTANT: pushes the cells at val and val+4
+	k2Value        // a 2VALUE: fetches the cell pair at val, as 2@ does
 )
 
 const (

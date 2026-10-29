@@ -243,10 +243,25 @@ func skip(c byte) {
 // number converts s in BASE, or in the base a prefix gives: $ for 16, # for
 // 10, % for 2, and 'c' for a character.
 func number(s []byte) (uint32, bool) {
-	if len(s) == 3 && s[0] == '\'' && s[2] == '\'' {
-		return uint32(s[1]), true
+	v, ok := number64(s)
+	return uint32(v), ok
+}
+
+// double converts s, a number that ends in a point, to a double number, as
+// the DOUBLE word set has it: 1. is the double 1.
+func double(s []byte) (uint64, bool) {
+	n := len(s)
+	if n < 2 || s[n-1] != '.' {
+		return 0, false
 	}
-	b := base()
+	return number64(s[:n-1])
+}
+
+func number64(s []byte) (uint64, bool) {
+	if len(s) == 3 && s[0] == '\'' && s[2] == '\'' {
+		return uint64(s[1]), true
+	}
+	b := uint64(base())
 	i := 0
 	if i < len(s) {
 		switch s[i] {
@@ -269,15 +284,15 @@ func number(s []byte) (uint32, bool) {
 	if i == len(s) || b < 2 || b > 36 {
 		return 0, false
 	}
-	v := uint32(0)
+	v := uint64(0)
 	for ; i < len(s); i++ {
 		c := upper(s[i])
-		d := uint32(99)
+		d := uint64(99)
 		switch {
 		case c >= '0' && c <= '9':
-			d = uint32(c - '0')
+			d = uint64(c - '0')
 		case c >= 'A' && c <= 'Z':
-			d = uint32(c-'A') + 10
+			d = uint64(c-'A') + 10
 		}
 		if d >= b {
 			return 0, false
@@ -312,8 +327,18 @@ func interpret() {
 		}
 		v, ok := number(s)
 		if !ok {
-			abortName(s, " ?")
-			return
+			d, ok := double(s)
+			if !ok {
+				abortName(s, " ?")
+				return
+			}
+			if compiling() {
+				compileLit(uint32(d))
+				compileLit(uint32(d >> 32))
+			} else {
+				pushd(d)
+			}
+			continue
 		}
 		if compiling() {
 			compileLit(v)

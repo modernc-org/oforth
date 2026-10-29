@@ -1,0 +1,242 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// The STRING word set, OctoGo's words but /STRING, which is PASM.
+
+func octoString(id int) {
+	switch id {
+	case oDashTrailing:
+		n := pop()
+		a := pop()
+		for n > 0 && peekb(a+n-1) == ' ' {
+			n--
+		}
+		push(a)
+		push(n)
+	case oBlank:
+		n := pop()
+		a := pop()
+		for i := uint32(0); i < n; i++ {
+			pokeb(a+i, ' ')
+		}
+	case oCMove:
+		n := pop()
+		d := pop()
+		s := pop()
+		for i := uint32(0); i < n; i++ {
+			pokeb(d+i, peekb(s+i))
+		}
+	case oCMoveUp:
+		n := pop()
+		d := pop()
+		s := pop()
+		for i := n; i > 0; i-- {
+			pokeb(d+i-1, peekb(s+i-1))
+		}
+	case oCompare:
+		n2 := pop()
+		a2 := pop()
+		n1 := pop()
+		a1 := pop()
+		push(uint32(compare(memory(a1, n1), memory(a2, n2))))
+	case oSearch:
+		n2 := pop()
+		a2 := pop()
+		n1 := pop()
+		a1 := pop()
+		s, p := memory(a1, n1), memory(a2, n2)
+		for i := 0; i+len(p) <= len(s); i++ {
+			if bytesEq(s[i:i+len(p)], p) {
+				push(a1 + uint32(i))
+				push(n1 - uint32(i))
+				push(0xffffffff)
+				return
+			}
+		}
+		push(a1)
+		push(n1)
+		push(0)
+	case oSLiteral:
+		n := pop()
+		a := stringHere(memory(pop(), n))
+		compileLit(a)
+		compileLit(n)
+	case oUnescape:
+		d := pop()
+		n := pop()
+		a := pop()
+		k := uint32(0)
+		for i := uint32(0); i < n; i++ {
+			c := peekb(a + i)
+			pokeb(d+k, c)
+			k++
+			if c == '%' {
+				pokeb(d+k, c)
+				k++
+			}
+		}
+		push(d)
+		push(k)
+	case oSubstitute:
+		u2 := pop()
+		a2 := pop()
+		u1 := pop()
+		n, k := substitute(pop(), u1, a2, u2)
+		push(a2)
+		push(k)
+		push(n)
+	case oReplaces:
+		n2 := pop()
+		a2 := pop()
+		n1 := pop()
+		replaces(memory(a2, n2), memory(pop(), n1))
+	default:
+		if !runExported(id) {
+			abort("no such OctoGo word")
+		}
+	}
+}
+
+// compare is COMPARE: -1, 0 or 1 as a is before b, the same, or after it,
+// byte by byte, a prefix before what it begins.
+func compare(a, b []byte) int32 {
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if a[i] != b[i] {
+			if a[i] < b[i] {
+				return -1
+			}
+			return 1
+		}
+	}
+	switch {
+	case len(a) < len(b):
+		return -1
+	case len(a) > len(b):
+		return 1
+	}
+	return 0
+}
+
+// The substitutions REPLACES makes, one after another in subs: each the
+// length of its name, the name, the length of its text in two bytes, and
+// the text. A name is found regardless of case, as a word's is.
+var (
+	subs  [1024]byte
+	nsubs int
+)
+
+// findSub answers where the substitution name is in subs, or -1.
+func findSub(name []byte) int {
+	for i := 0; i < nsubs; {
+		nl := int(subs[i])
+		if nl == len(name) {
+			same := true
+			for k, c := range name {
+				if upper(subs[i+1+k]) != upper(c) {
+					same = false
+					break
+				}
+			}
+			if same {
+				return i
+			}
+		}
+		i = subEnd(i)
+	}
+	return -1
+}
+
+// subEnd answers where the substitution at i in subs ends.
+func subEnd(i int) int {
+	nl := int(subs[i])
+	return i + 3 + nl + (int(subs[i+1+nl]) | int(subs[i+2+nl])<<8)
+}
+
+func subText(i int) []byte {
+	nl := int(subs[i])
+	return subs[i+3+nl : subEnd(i)]
+}
+
+// replaces is REPLACES: text, copied, becomes what name is substituted by.
+func replaces(name, text []byte) {
+	if len(name) == 0 || len(name) > 255 {
+		abort("bad name")
+		return
+	}
+	if i := findSub(name); i >= 0 {
+		e := subEnd(i)
+		copy(subs[i:], subs[e:nsubs])
+		nsubs -= e - i
+	}
+	if nsubs+3+len(name)+len(text) > len(subs) {
+		abort("no room for the substitution")
+		return
+	}
+	at := nsubs
+	subs[at] = byte(len(name))
+	at++
+	at += copy(subs[at:], name)
+	subs[at] = byte(len(text))
+	subs[at+1] = byte(len(text) >> 8)
+	at += 2
+	at += copy(subs[at:], text)
+	nsubs = at
+}
+
+// What SUBSTITUTE writes to: where, how much room there is, and how much it
+// wrote, which may be more than the room.
+var subDst, subRoom, subLen uint32
+
+func subPut(s []byte) {
+	for _, c := range s {
+		if subLen < subRoom {
+			pokeb(subDst+subLen, c)
+		}
+		subLen++
+	}
+}
+
+// substitute is SUBSTITUTE of the u1 bytes at a1 into u2 bytes at a2: each
+// %name% of a substitution's name is its text, %% is %, and the rest is as
+// it was. It answers how many substitutions it made, or -1 when the result
+// did not fit or the two strings overlap, and the result's length.
+func substitute(a1, u1, a2, u2 uint32) (uint32, uint32) {
+	if u1 > 0 && u2 > 0 && a1 < a2+u2 && a2 < a1+u1 {
+		return 0xffffffff, 0
+	}
+	src := memory(a1, u1)
+	subDst, subRoom, subLen = a2, u2, 0
+	n := uint32(0)
+	for i := 0; i < len(src); {
+		if src[i] != '%' {
+			subPut(src[i : i+1])
+			i++
+			continue
+		}
+		if i+1 < len(src) && src[i+1] == '%' {
+			subPut(src[i : i+1])
+			i += 2
+			continue
+		}
+		j := i + 1
+		for j < len(src) && src[j] != '%' {
+			j++
+		}
+		if j == len(src) {
+			subPut(src[i:])
+			break
+		}
+		if e := findSub(src[i+1 : j]); e >= 0 {
+			subPut(subText(e))
+			n++
+		} else {
+			subPut(src[i : j+1])
+		}
+		i = j + 1
+	}
+	if subLen > u2 {
+		return 0xffffffff, 0
+	}
+	return n, subLen
+}

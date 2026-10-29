@@ -145,13 +145,30 @@ const (
 	oRun
 	oCatch
 	oThrow
+	o2Constant
+	o2Variable
+	o2Value
+	o2Literal
+	oDDot
+	oDDotR
+	oMStarSlash
+	oDashTrailing
+	oBlank
+	oCMove
+	oCMoveUp
+	oCompare
+	oSearch
+	oSLiteral
+	oUnescape
+	oSubstitute
+	oReplaces
 
 	// The functions Define makes words, from here on (embed.ogo).
 	oExported
 )
 
 // Words the compiler compiles where it makes something of its own.
-var wType, wFetch, wStore, wExecute, wDrop, wAbort int
+var wType, wFetch, wStore, wExecute, wDrop, wAbort, w2Fetch, w2Store int
 
 func octoWord(s string, id int, flags uint8) int {
 	w := defineStr(s, kOcto, flags)
@@ -170,6 +187,8 @@ func octoWords() {
 	const ic = fImmediate | fCompile
 	// The words whose compile semantics use others look them up first.
 	wFetch = findStr("@")
+	w2Fetch = findStr("2@")
+	w2Store = findStr("2!")
 	wStore = findStr("!")
 	wExecute = findStr("EXECUTE")
 	wDrop = findStr("DROP")
@@ -306,6 +325,23 @@ func octoWords() {
 	octoWord("RUN", oRun, 0)
 	octoWord("CATCH", oCatch, 0)
 	octoWord("THROW", oThrow, 0)
+	octoWord("2CONSTANT", o2Constant, 0)
+	octoWord("2VARIABLE", o2Variable, 0)
+	octoWord("2VALUE", o2Value, 0)
+	octoWord("2LITERAL", o2Literal, ic)
+	octoWord("D.", oDDot, 0)
+	octoWord("D.R", oDDotR, 0)
+	octoWord("M*/", oMStarSlash, 0)
+	octoWord("-TRAILING", oDashTrailing, 0)
+	octoWord("BLANK", oBlank, 0)
+	octoWord("CMOVE", oCMove, 0)
+	octoWord("CMOVE>", oCMoveUp, 0)
+	octoWord("COMPARE", oCompare, 0)
+	octoWord("SEARCH", oSearch, 0)
+	octoWord("SLITERAL", oSLiteral, ic)
+	octoWord("UNESCAPE", oUnescape, 0)
+	octoWord("SUBSTITUTE", oSubstitute, 0)
+	octoWord("REPLACES", oReplaces, 0)
 	constWord("R/O", famRO)
 	constWord("W/O", famWO)
 	constWord("R/W", famRW)
@@ -346,7 +382,7 @@ func Init(codeSpace, dataSpace []uint32) {
 }
 
 // The digits of a number, written from the end of numBuf.
-var numBuf [40]byte
+var numBuf [72]byte // a double's 64 binary digits and a sign
 
 func digits(v uint32, signed bool) []byte {
 	b := base()
@@ -506,6 +542,12 @@ func needs(id int) int {
 		return 2
 	case oCatch, oThrow:
 		return 1
+	case o2Constant, o2Value, o2Literal, oDDot, oDashTrailing, oBlank, oSLiteral:
+		return 2
+	case oDDotR, oCMove, oCMoveUp, oUnescape:
+		return 3
+	case oMStarSlash, oCompare, oSearch, oSubstitute, oReplaces:
+		return 4
 	}
 	if i := id - oExported; i >= 0 && i < nexported {
 		return int(exportedIn[i])
@@ -807,7 +849,7 @@ func valueOf(k uint8) int {
 	if w < 0 {
 		return -1
 	}
-	if words[w].kind != k {
+	if words[w].kind != k && !(k == kValue && words[w].kind == k2Value) {
 		abortName(wordName(w), " is of another kind")
 		return -1
 	}
@@ -1064,6 +1106,10 @@ func octo2(id int) {
 		}
 		w := valueOf(k)
 		if w < 0 {
+			return
+		}
+		if words[w].kind == k2Value {
+			to2(w)
 			return
 		}
 		if compiling() {

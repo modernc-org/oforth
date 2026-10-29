@@ -18,20 +18,22 @@ It is the third program of size in OctoGo, after
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
 **Status, 2026-10-29: milestones M2 and M3 done, M4 begun.** A REPL on the serial
-line compiles every colon definition to P2 machine code: 111 primitives
+line compiles every colon definition to P2 machine code: 127 primitives
 copied in as P2 instructions, literals folded into the instructions that
 use them, small words inlined, a call in tail position made a jump, a loop
 without calls run from cog RAM, a DO loop there with no branch in its body
 repeated by REP, calls with the return address in a register
-and the return stack in LUT RAM, and 133 words written in OctoGo that
+and the return stack in LUT RAM, and 150 words written in OctoGo that
 compiled code calls back into. The P2's pins, smart pins, clocks, locks
 and LUT are words named after OctoGo's `p2` package's functions, and
 `RUN` runs a word on a cog of its own. An OctoGo program embeds the
 Forth by copying a directory, and makes functions of its own words.
 `INCLUDE` and the FILE words read and write the host's files, over the
-serial line, and `CATCH` and `THROW` catch errors, the system's with
-ANS's codes. It passes the CORE, CORE EXT, FILE and EXCEPTION tests of
-the Forth-2012 test suite on the board, with 0
+serial line, `CATCH` and `THROW` catch errors, the system's with ANS's
+codes, and the DOUBLE and STRING word sets are there, double numbers
+written with a point, `1.`. It passes the CORE, CORE EXT, FILE,
+EXCEPTION, DOUBLE and STRING tests of the Forth-2012 test suite on the
+board, with 0
 errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
 word's machine code as the words it was compiled from. There is no
 FLOATING, no

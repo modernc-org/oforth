@@ -158,12 +158,44 @@ PUB engLayout(i) : r
     2: r := RP0
     other: r := -1
 
+DAT
+
+' The DAT is assembled from cog address 0, and past long $400 the assembler
+' takes an address for a hub one, so that a relative branch there does not
+' assemble: what branches comes first, the runner and then the templates
+' that branch, which are early in the table.
+
+' The runner, the engine's image for a cog of its own: a cog RUN starts
+' begins here with its launch block in PTRA, which has whether it is yet to
+' be taken, the word, where the word goes when it returns or traps, the
+' count of cells for its stack, and the cells, the first the deepest. The
+' cog's registers, LUT and cog RAM are its own, so the word has stacks and
+' a loop cache of its own; at its end the cog stops, a trap included, for
+' only the cog that runs OctoGo serves one.
+runner        rdlong  t1, ptra[1]             ' the word
+              rdlong  back, ptra[2]           ' its end
+              rdlong  t2, ptra[3]             ' the count of cells
+              mov     t3, ptra
+              add     ptra, #16
+              mov     ptrb, #DS0
+              mov     rp, #RP0
+              mov     ctag, #0
+              mov     tos, #0
+.cell         tjz     t2, #.go
+              wrlut   tos, ptrb++
+              rdlong  tos, ptra++
+              djnz    t2, #.cell
+.go           wrlong  #0, t3                  ' taken
+              mov     pb, back
+              jmp     t1
+runend        cogid   t1
+              cogstop t1
+
 ' The templates. Each is a header long, the name, a zero, and the code from
 ' the next long boundary; a header of -1 ends them. The compiler copies the
 ' code into a word, so every template is position-independent: no branch out
 ' of it, and a branch inside it relative. A name beginning with "~" is the
 ' compiler's own and marked F_HIDDEN.
-DAT
 tb
 
 ' The stack.
@@ -621,6 +653,174 @@ false_e
 bl_b          wrlut   tos, ptrb++
               mov     tos, #32
 bl_e
+
+' Double numbers, a pair of cells with the high one on top, so that TOS is
+' the high cell and the low one is in LUT below it. No branches: a borrow or
+' a carry goes from the low cells to the high ones in C.
+              long    (@dplus_e - @dplus_b) >> 2
+              byte    "D+", 0
+              alignl
+dplus_b       rdlut   t1, --ptrb              ' d2's low cell
+              rdlut   t2, --ptrb              ' d1's high
+              rdlut   t3, ptrb[-1]            ' d1's low
+              add     t3, t1 wc
+              addx    tos, t2
+              wrlut   t3, ptrb[-1]
+dplus_e
+              long    (@dminus_e - @dminus_b) >> 2
+              byte    "D-", 0
+              alignl
+dminus_b      rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              rdlut   t3, ptrb[-1]
+              sub     t3, t1 wc
+              subx    t2, tos
+              mov     tos, t2
+              wrlut   t3, ptrb[-1]
+dminus_e
+              long    (@dnegate_e - @dnegate_b) >> 2
+              byte    "DNEGATE", 0
+              alignl
+dnegate_b     rdlut   t1, ptrb[-1]
+              mov     t2, #0
+              sub     t2, t1 wc
+              mov     t3, #0
+              subx    t3, tos
+              mov     tos, t3
+              wrlut   t2, ptrb[-1]
+dnegate_e
+              long    (@dabs_e - @dabs_b) >> 2
+              byte    "DABS", 0
+              alignl
+dabs_b        testb   tos, #31 wz             ' Z: negative, DNEGATE then
+              rdlut   t1, ptrb[-1]
+        if_z  mov     t2, #0
+        if_z  sub     t2, t1 wc
+        if_z  mov     t3, #0
+        if_z  subx    t3, tos
+        if_z  mov     tos, t3
+        if_z  wrlut   t2, ptrb[-1]
+dabs_e
+              long    (@d2star_e - @d2star_b) >> 2
+              byte    "D2*", 0
+              alignl
+d2star_b      rdlut   t1, ptrb[-1]
+              shl     t1, #1 wc
+              rcl     tos, #1
+              wrlut   t1, ptrb[-1]
+d2star_e
+              long    (@d2slash_e - @d2slash_b) >> 2
+              byte    "D2/", 0
+              alignl
+d2slash_b     rdlut   t1, ptrb[-1]
+              sar     tos, #1 wc
+              rcr     t1, #1
+              wrlut   t1, ptrb[-1]
+d2slash_e
+              long    (@dzlt_e - @dzlt_b) >> 2
+              byte    "D0<", 0
+              alignl
+dzlt_b        sub     ptrb, #1
+              sar     tos, #31
+dzlt_e
+              long    (@dzeq_e - @dzeq_b) >> 2
+              byte    "D0=", 0
+              alignl
+dzeq_b        rdlut   t1, --ptrb
+              or      tos, t1 wz
+              wrz     tos
+              neg     tos
+dzeq_e
+              long    (@deq_e - @deq_b) >> 2
+              byte    "D=", 0
+              alignl
+deq_b         rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              rdlut   t3, --ptrb
+              xor     tos, t2
+              xor     t1, t3
+              or      tos, t1 wz
+              wrz     tos
+              neg     tos
+deq_e
+              long    (@dlt_e - @dlt_b) >> 2
+              byte    "D<", 0
+              alignl
+dlt_b         rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              rdlut   t3, --ptrb
+              cmp     t3, t1 wc
+              cmpsx   t2, tos wc
+              wrc     tos
+              neg     tos
+dlt_e
+              long    (@dult_e - @dult_b) >> 2
+              byte    "DU<", 0
+              alignl
+dult_b        rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              rdlut   t3, --ptrb
+              cmp     t3, t1 wc
+              cmpx    t2, tos wc
+              wrc     tos
+              neg     tos
+dult_e
+              long    (@dtos_e - @dtos_b) >> 2
+              byte    "D>S", 0
+              alignl
+dtos_b        rdlut   tos, --ptrb
+dtos_e
+              long    (@mplus_e - @mplus_b) >> 2
+              byte    "M+", 0
+              alignl
+mplus_b       rdlut   t1, --ptrb              ' d's high cell
+              rdlut   t2, ptrb[-1]            ' and its low
+              mov     t3, tos
+              sar     t3, #31
+              add     t2, tos wc
+              addx    t1, t3
+              mov     tos, t1
+              wrlut   t2, ptrb[-1]
+mplus_e
+              long    (@dmax_e - @dmax_b) >> 2
+              byte    "DMAX", 0
+              alignl
+dmax_b        rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              rdlut   t3, ptrb[-1]
+              cmp     t3, t1 wc
+              cmpsx   t2, tos wc              ' C: d1 < d2
+        if_nc mov     tos, t2
+        if_nc mov     t1, t3
+              wrlut   t1, ptrb[-1]
+dmax_e
+              long    (@dmin_e - @dmin_b) >> 2
+              byte    "DMIN", 0
+              alignl
+dmin_b        rdlut   t1, --ptrb
+              rdlut   t2, --ptrb
+              rdlut   t3, ptrb[-1]
+              cmp     t3, t1 wc
+              cmpsx   t2, tos wc
+        if_c  mov     tos, t2
+        if_c  mov     t1, t3
+              wrlut   t1, ptrb[-1]
+dmin_e
+              long    (@drot_e - @drot_b) >> 2
+              byte    "2ROT", 0
+              alignl
+drot_b        rdlut   t1, ptrb[-5]            ' x1
+              rdlut   t2, ptrb[-4]            ' x2
+              rdlut   t3, ptrb[-3]
+              wrlut   t3, ptrb[-5]
+              rdlut   t3, ptrb[-2]
+              wrlut   t3, ptrb[-4]
+              rdlut   t3, ptrb[-1]
+              wrlut   t3, ptrb[-3]
+              wrlut   tos, ptrb[-2]
+              wrlut   t1, ptrb[-1]
+              mov     tos, t2
+drot_e
 
 ' Memory. An address is a hub address.
               long    (@fetch_e - @fetch_b) >> 2
@@ -1337,32 +1537,6 @@ cmiss         mov     ctag, t2
               setq    t2
               rdlong  0, ctag
               jmp     #\0
-
-' The runner, the engine's image for a cog of its own: a cog RUN starts
-' begins here with its launch block in PTRA, which has whether it is yet to
-' be taken, the word, where the word goes when it returns or traps, the
-' count of cells for its stack, and the cells, the first the deepest. The
-' cog's registers, LUT and cog RAM are its own, so the word has stacks and
-' a loop cache of its own; at its end the cog stops, a trap included, for
-' only the cog that runs OctoGo serves one.
-runner        rdlong  t1, ptra[1]             ' the word
-              rdlong  back, ptra[2]           ' its end
-              rdlong  t2, ptra[3]             ' the count of cells
-              mov     t3, ptra
-              add     ptra, #16
-              mov     ptrb, #DS0
-              mov     rp, #RP0
-              mov     ctag, #0
-              mov     tos, #0
-.cell         tjz     t2, #.go
-              wrlut   tos, ptrb++
-              rdlong  tos, ptra++
-              djnz    t2, #.cell
-.go           wrlong  #0, t3                  ' taken
-              mov     pb, back
-              jmp     t1
-runend        cogid   t1
-              cogstop t1
 
 ' What the encoder must make of the templates, as flexspin assembles it, for
 ' the test of the encoder.

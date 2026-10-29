@@ -388,6 +388,13 @@ func compileWord(w int) {
 		compileLit(words[w].val)
 		flushLit()
 		emitImm(tTrap, oMarkerRT)
+	case k2Const:
+		a := words[w].val
+		compileLit(peek(a))
+		compileLit(peek(a + 4))
+	case k2Value:
+		compileLit(words[w].val)
+		compileWord(w2Fetch)
 	}
 }
 
@@ -901,6 +908,23 @@ func standaloneValue(w int, cell uint32) {
 	emitImm(int(tFold[words[wFetch].id]), cell)
 	emitT(tRet)
 	words[w].size = int32(cp - at)
+}
+
+// standalone2 gives a 2CONSTANT the code that pushes its cells, and a
+// 2VALUE, fetch set, the code that fetches them.
+func standalone2(w int, fetch bool) {
+	at := cp
+	wp := &words[w]
+	wp.xt = codeAddr(cp)
+	if fetch {
+		emitLit(wp.val)
+		emitT(int(words[w2Fetch].id))
+	} else {
+		emitLit(peek(wp.val))
+		emitLit(peek(wp.val + 4))
+	}
+	emitT(tRet)
+	wp.size = int32(cp - at)
 }
 
 // standaloneDefer gives a DEFER the code that executes what it holds.

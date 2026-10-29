@@ -79,9 +79,7 @@ func octoException(id int) {
 			}
 		}
 	default:
-		if !runExported(id) {
-			abort("no such OctoGo word")
-		}
+		octoDouble(id)
 	}
 }
 

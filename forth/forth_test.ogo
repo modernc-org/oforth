@@ -602,6 +602,42 @@ func TestException(t *testing.T) {
 	check(t, ": c9 0 4 0 DO I 2 MOD IF ['] x8 CATCH + ELSE 1+ THEN LOOP ; c9 .", "12 ")
 }
 
+// TestDouble holds the DOUBLE word set: numbers ending in a point, the
+// templates' arithmetic, the defining words, M*/, D. and D.R.
+func TestDouble(t *testing.T) {
+	check(t, "1. . . -2. . .", "0 1 -1 -2 ")
+	check(t, ": rd 3. ; rd D. $-12AbCdEf. D. #-12346789. D.", "3 -313249263 -12346789 ")
+	check(t, "1 2 2CONSTANT c2 c2 . . : uc2 c2 ; uc2 . .", "2 1 2 1 ")
+	checkHas(t, "SEE c2", "c2 pushes 1 2")
+	check(t, "2VARIABLE v2 5 6 v2 2! v2 2@ . .", "6 5 ")
+	check(t, "7 8 2VALUE w2 w2 . . 9 10 TO w2 w2 . . : tw 11 12 TO w2 ; tw w2 . .", "8 7 10 9 12 11 ")
+	checkHas(t, "SEE w2", "w2 is a 2VALUE, now 11 12")
+	check(t, ": cl [ 3 4 ] 2LITERAL ; cl . .", "4 3 ")
+	check(t, "1. 2. D+ D. -1. 2. D+ D. 5. 7. D- D. -1 0 1 0 D+ . .", "3 1 -2 1 0 ")
+	check(t, "1. DNEGATE D. -5. DABS D. 0 1 D2/ . . -1. D2* D.", "-1 5 0 -2147483648 -2 ")
+	check(t, "-1. D0< . 0. D0= . 1. 2. D< . -2. -1. D< . 1. -1. DU< . 3. 3. D= .", "-1 -1 -1 -1 -1 -1 ")
+	check(t, "1. 2. DMAX D. 1. 2. DMIN D. -1. 3 M+ D. 7. D>S .", "2 1 2 7 ")
+	check(t, "1. 2. 3. 2ROT D. D. D.", "1 3 2 ")
+	check(t, "5. 7 11 M*/ D. -5. 7 11 M*/ D. 4611686018427387903. 8 16 M*/ D.", "3 -3 2305843009213693951 ")
+	check(t, "12345. 10 D.R -1. 4 D.R", "     12345  -1")
+}
+
+// TestString holds the STRING word set.
+func TestString(t *testing.T) {
+	check(t, "S\" ab  \" -TRAILING . DROP S\"    \" -TRAILING . DROP", "2 0 ")
+	check(t, "CREATE sb 8 ALLOT sb 8 BLANK sb 8 TYPE", "        ")
+	check(t, "S\" abcdef\" sb SWAP CMOVE sb sb 1+ 3 CMOVE sb 6 TYPE", "aaaaef")
+	check(t, "S\" abcdef\" sb SWAP CMOVE sb 1+ sb 3 CMOVE> sb 6 TYPE", "ddddef")
+	check(t, "S\" abc\" S\" abd\" COMPARE . S\" abc\" S\" abc\" COMPARE . S\" abcd\" S\" abc\" COMPARE . S\" B\" S\" a\" COMPARE .", "-1 0 1 -1 ")
+	check(t, "S\" hello world\" S\" wor\" SEARCH . TYPE", "-1 world")
+	check(t, "S\" hello\" S\" xyz\" SEARCH . TYPE", "0 hello")
+	check(t, ": sl [ S\" lit\" ] SLITERAL ; sl TYPE", "lit")
+	check(t, "S\" a%b\" PAD UNESCAPE TYPE", "a%%b")
+	check(t, "S\" xy\" S\" n\" REPLACES S\" 1%n%2%%3%m%\" PAD 40 SUBSTITUTE . TYPE", "1 1xy2%3%m%")
+	check(t, "S\" abcd\" PAD 3 SUBSTITUTE . 2DROP", "-1 ")
+	check(t, "S\" Q\" S\" N\" REPLACES S\" %n%\" PAD 9 SUBSTITUTE . TYPE", "1 Q")
+}
+
 // The host's files for TestInclude and TestFile: a 9P server in the test,
 // which reads the messages the client writes into out, takes them out of
 // it, and answers by Key, as the loader does over the serial line. Its

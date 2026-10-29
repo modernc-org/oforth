@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-five tests by M3); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-seven tests by M3); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -65,7 +65,9 @@ LUT), PASM templates, a literal pin folded into the D field
 the embedding API, `Define`, `Push` and `Pop` (the user's choice of
 2026-10-29) and `Serial`, with `example/`, M3 done; then CATCH and
 THROW, the EXCEPTION word set, the suite's `exceptiontest.fth`
-passing. Next: the SD card behind the file layer when a card is back. Not yet: a host twin. The repository is on
+passing; then the DOUBLE and STRING word sets, `doubletest.fth` and
+`stringtest.fth` passing. Next: the SD card behind the file layer when a
+card is back. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -316,7 +318,11 @@ All measured or read in this session and recorded with their sources in
   file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
   `nine.ogo` the 9P client under it; `cog.ogo` RUN (`octoCog`, after
   `octoFile`); `exception.ogo` CATCH and THROW (`octoException`, after
-  `octoCog`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
+  `octoCog`); `double.ogo` the DOUBLE word set's OctoGo words, its
+  arithmetic being templates, D+ to 2ROT, branchless (`octoDouble`,
+  after `octoException`); `string.ogo` the STRING word set, the
+  substitutions of REPLACES in `subs`, 1 KB (`octoString`, after
+  `octoDouble`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
   `Serial`; `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
@@ -352,7 +358,10 @@ All measured or read in this session and recorded with their sources in
 - **The kinds of word** (`dict.ogo`): kPrim, kColon, kOcto, kConst
   (CONSTANT, VARIABLE, CREATE: its standalone code's last long, `ret`, is
   what DOES> turns into a jump to the DOES> code, making it kDoes), kValue,
-  kDefer, kMarker. A kDoes is compiled as a call of its code, so a later
+  kDefer, kMarker, k2Const (its cells at val and val+4, compiled as two
+  literals) and k2Value (a pair at val as 2! stores it, which TO of it,
+  `to2`, does). A number ending in a point is a double (`double`,
+  `number64`). A kDoes is compiled as a call of its code, so a later
   DOES> reaches words already compiled.
 - **Inlining and tail calls** (`compile.ogo`, M4): while a definition
   compiles, `inlinable` stays true until a call, branch or trap is emitted
@@ -456,7 +465,10 @@ All measured or read in this session and recorded with their sources in
   `needs`; a new test is a `check` in `forth/forth_test.ogo`.
 - Spin2 traps met: a label cannot be a condition's name (`if_e` is one); in
   Spin code a CON name is a constant, so the accessors name PR0-PR7; a
-  method and a DAT label cannot share a name; names are case-insensitive.
+  method and a DAT label cannot share a name; names are case-insensitive;
+  the DAT is assembled from cog address 0, and past long $400 a relative
+  branch does not assemble ("crosses HUB/COG boundary"), so the runner and
+  the templates that branch come early in it.
 
 ## Commands
 
@@ -472,7 +484,7 @@ flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
 flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
-scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE and EXCEPTION tests on the board, INCLUDEd by 9P, half a minute; errors: 0
+scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE and STRING tests on the board, INCLUDEd by 9P, a minute; errors: 0
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes

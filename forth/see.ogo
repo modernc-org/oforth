@@ -296,6 +296,18 @@ func see(w int) {
 		typeStr(" is a DEFER of ")
 		seeTarget(peek(words[w].val))
 		emit('\n')
+	case k2Const, k2Value:
+		a, b := words[w].val, words[w].val+4
+		if words[w].kind == k2Const {
+			typeStr(" pushes ")
+		} else {
+			typeStr(" is a 2VALUE, now ")
+			a, b = b, a
+		}
+		typeBytes(digits(peek(a), true))
+		emit(' ')
+		typeBytes(digits(peek(b), true))
+		emit('\n')
 	}
 	if words[w].flags&fImmediate != 0 {
 		typeStr("IMMEDIATE\n")
