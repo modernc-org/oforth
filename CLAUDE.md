@@ -327,7 +327,7 @@ All measured or read in this session and recorded with their sources in
   `octoCog`); `double.ogo` the DOUBLE word set's OctoGo words, its
   arithmetic being templates, D+ to 2ROT, branchless (`octoDouble`,
   after `octoException`); `string.ogo` the STRING word set, the
-  substitutions of REPLACES in `subs`, 1 KB (`octoString`, after
+  substitutions of REPLACES in `subs`, 256 bytes (`octoString`, after
   `octoDouble`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
   `Serial`; `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,

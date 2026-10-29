@@ -122,7 +122,7 @@ func compare(a, b []byte) int32 {
 // length of its name, the name, the length of its text in two bytes, and
 // the text. A name is found regardless of case, as a word's is.
 var (
-	subs  [1024]byte
+	subs  [256]byte
 	nsubs int
 )
 
