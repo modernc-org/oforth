@@ -1,0 +1,100 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"p2"
+)
+
+// The embedding: a program gives the Forth its code and data spaces (Init)
+// and its console (Serial, or Console, Key and Avail of its own), makes
+// functions of its own words (Define), and runs the REPL (Quit) or Forth
+// source (Evaluate). This directory is the whole Forth, importing nothing
+// but p2 and unsafe, so a program has it by copying the directory.
+
+const maxExported = 64
+
+// The functions Define made words, a word's trap being oExported and the
+// function's place here, and how many cells each takes.
+var (
+	exported   [maxExported]func()
+	exportedIn [maxExported]uint8
+	nexported  int
+)
+
+// Define makes f the word name, which takes in cells from the data stack by
+// Pop, checked before f runs, and gives its results by Push. Executed or
+// compiled, the word calls f, which runs on this cog, so RUN refuses a word
+// that uses it. Define answers false when the name is bad or there is no
+// room for the word.
+func Define(name string, in int, f func()) bool {
+	if nexported == maxExported || in < 0 || in > 255 {
+		return false
+	}
+	w := defineStr(name, kOcto, 0)
+	if w < 0 {
+		aborted = false
+		return false
+	}
+	exported[nexported] = f
+	exportedIn[nexported] = uint8(in)
+	words[w].id = int32(oExported + nexported)
+	standaloneTrap(w)
+	nexported++
+	return true
+}
+
+// Push pushes v on the data stack, and Pop pops the top of it, for a
+// function Define made a word. A Pop of an empty stack answers 0 and
+// abandons the line, as any stack underflow does.
+func Push(v uint32) { push(v) }
+
+func Pop() uint32 { return pop() }
+
+// runExported runs the function of the word whose trap is id, answering
+// whether there is one.
+func runExported(id int) bool {
+	i := id - oExported
+	if i < 0 || i >= nexported {
+		return false
+	}
+	exported[i]()
+	return true
+}
+
+// Serial makes the serial line the console: the output is written by
+// p2.WriteByte, and the input read into a ring by a cog that does nothing
+// else, for nothing buffers behind p2.ReadByte, and a byte that arrives
+// while the REPL compiles, as pasted source does, would be lost.
+func Serial() {
+	Console = true
+	Key = serialKey
+	Avail = serialAvail
+	go reader()
+}
+
+// ringN must be a power of two.
+const ringN = 4096
+
+var (
+	ring  [ringN]byte
+	rhead int // written by the reader only
+	rtail int // written by the REPL only
+)
+
+func reader() {
+	for {
+		ring[rhead&(ringN-1)] = byte(p2.ReadByte(0))
+		rhead++
+	}
+}
+
+func serialKey() int {
+	for rtail == rhead {
+	}
+	c := ring[rtail&(ringN-1)]
+	rtail++
+	return int(c)
+}
+
+func serialAvail() bool { return rtail != rhead }

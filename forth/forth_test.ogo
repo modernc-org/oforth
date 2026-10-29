@@ -550,6 +550,31 @@ func TestRun(t *testing.T) {
 	check(t, "1 ' r1 RUN", "error: stack underflow\n")
 }
 
+func addMul() {
+	b := Pop()
+	a := Pop()
+	Push(a + b)
+	Push(a * b)
+}
+
+// TestDefine holds Define, Push and Pop to making a function of the program
+// a word, executed and compiled, the cells it takes checked first.
+func TestDefine(t *testing.T) {
+	if !Define("ADD-MUL", 2, addMul) {
+		printf("Define failed\n")
+		t.Fail()
+	}
+	if Define("", 0, addMul) {
+		printf("Define took an empty name\n")
+		t.Fail()
+	}
+	check(t, "3 4 ADD-MUL . .", "12 7 ")
+	check(t, ": am 1+ ADD-MUL ; 5 5 am . .", "30 11 ")
+	check(t, "1 ADD-MUL", "error: stack underflow\n")
+	check(t, "0 ' am RUN", "am calls OctoGo, which only this cog runs\n")
+	checkHas(t, "SEE ADD-MUL", "ADD-MUL is OctoGo's, trap ")
+}
+
 // The host's files for TestInclude and TestFile: a 9P server in the test,
 // which reads the messages the client writes into out, takes them out of
 // it, and answers by Key, as the loader does over the serial line. Its

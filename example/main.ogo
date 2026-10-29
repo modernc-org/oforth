@@ -1,0 +1,67 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Command example embeds OctoForth in a program of its own, as any OctoGo
+// program can: it gives the Forth code and data spaces and the serial line,
+// makes three of its functions words, which take their arguments by
+// forth.Pop and give their results by forth.Push, defines a word in Forth
+// with one of them, and runs the REPL. On a P2-EDGE,
+//
+//	ogo run ./example
+//
+// and then, for instance, 5 COUNT-UP, 6 100 BLINK or PINS.
+//
+// A program has the Forth by copying the directory forth/ into its own
+// module: OctoGo takes no external dependencies.
+
+import (
+	"p2"
+
+	"modernc.org/oforth/forth"
+)
+
+var (
+	code [8192]uint32
+	data [8192]uint32
+)
+
+// leds is LEDS ( u -- ): u's bits 0 and 1 on the EDGE's LEDs, P56 and P57.
+func leds() {
+	u := forth.Pop()
+	p2.PinWrite(56, int(u&1))
+	p2.PinWrite(57, int(u>>1&1))
+}
+
+// blink is BLINK ( n ms -- ): P56 toggled n times, ms apart, as OctoGo
+// waits.
+func blink() {
+	ms := int(forth.Pop())
+	n := int(forth.Pop())
+	for i := 0; i < n; i++ {
+		p2.PinToggle(56)
+		p2.WaitMs(ms)
+	}
+	p2.PinFloat(56)
+}
+
+// pins is PINS ( -- ): what the 64 pins read, P63 first, in eights.
+func pins() {
+	for p := 63; p >= 0; p-- {
+		p2.WriteByte(byte('0' + p2.PinIn(p)))
+		if p%8 == 0 && p > 0 {
+			p2.WriteByte(' ')
+		}
+	}
+}
+
+func main() {
+	forth.Serial()
+	forth.Init(code[:], data[:])
+	forth.Define("LEDS", 1, leds)
+	forth.Define("BLINK", 2, blink)
+	forth.Define("PINS", 0, pins)
+	forth.Evaluate(": COUNT-UP ( n -- ) 0 ?DO I LEDS 250 WAIT-MS LOOP 0 LEDS ;")
+	forth.Banner()
+	forth.Quit()
+}

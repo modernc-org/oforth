@@ -143,6 +143,9 @@ const (
 	oRequired
 	oRequire
 	oRun
+
+	// The functions Define makes words, from here on (embed.ogo).
+	oExported
 )
 
 // Words the compiler compiles where it makes something of its own.
@@ -497,6 +500,9 @@ func needs(id int) int {
 		return 4
 	case oRun:
 		return 2
+	}
+	if i := id - oExported; i >= 0 && i < nexported {
+		return int(exportedIn[i])
 	}
 	return 0
 }

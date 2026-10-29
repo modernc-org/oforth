@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-three tests by M3); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-four tests by M3); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -61,9 +61,10 @@ out: the P2 words, the `p2` package's functions as words named after
 them (`PIN-HIGH`, `WAIT-MS`, `GET-CT`, the smart pins, the locks, the
 LUT), PASM templates, a literal pin folded into the D field
 (`F_IMMD`, AUGD over 511); `GETCT` and `COGID` became `GET-CT` and
-`COG-ID`; then `RUN`, a word on a cog of its own, the same day. Next:
-the embedding API's table of exported functions and its demo, and the
-SD card behind the file layer when a card is back. Not yet: a host twin. The repository is on
+`COG-ID`; then `RUN`, a word on a cog of its own, the same day; then
+the embedding API, `Define`, `Push` and `Pop` (the user's choice of
+2026-10-29) and `Serial`, with `example/`, M3 done. Next: the SD card
+behind the file layer when a card is back. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -92,6 +93,10 @@ The files:
   copying the one directory: OctoGo takes no external dependencies,
   every import being a directory of the program's own module. The
   engine moved there from `eng/` at the user's word, 2026-10-29.
+  `main.ogo` is `Serial`, `Init`, `Banner` and `Quit`.
+- `example/`: M3's demo, a program embedding the Forth with three words
+  of its own, LEDS, BLINK and PINS, and a Forth word, COUNT-UP, defined
+  at start by `Evaluate` (`ogo run ./example`).
 - `bench/`: the five benchmarks in three dialects, `oforth.fth`,
   `taqoz.fth`, `p2xc.fth`, the same algorithms; `scripts/bench.sh` runs
   them. Nothing of P2XCForth's author is in the repository (the user's
@@ -306,7 +311,8 @@ All measured or read in this session and recorded with their sources in
   first, with immediates, AUGS and branch targets decoded; `file.ogo` the
   file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
   `nine.ogo` the 9P client under it; `cog.ogo` RUN (`octoCog`, after
-  `octoFile`); `eng.ogo` and `eng.spin2` the engine, above.
+  `octoFile`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
+  `Serial`; `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
   written and not yet sent (`dirty`), `off` where in the file it starts
@@ -408,6 +414,12 @@ All measured or read in this session and recorded with their sources in
   it and an OctoGo word; a kDoes or an EXECUTE is not followed, and
   traps on the cog, which stops. `TestRun`. The REPL is cog 0 and the
   console's reader cog 1, so six are free.
+- **The embedding** (`embed.ogo`, M3): `Define(name, in, f)` makes a
+  kOcto word whose trap is `oExported` plus f's place in `exported`, 64
+  at most, `needs` answering `in`; `octoCog`'s default runs it
+  (`runExported`). f takes its arguments by `Pop` and gives its results
+  by `Push`. `Serial` is the console `main.ogo` had: Console, `Key` and
+  `Avail` over a ring a goroutine fills by `p2.ReadByte`. `TestDefine`.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
@@ -440,6 +452,7 @@ flock -w 900 /tmp/p2-board.lock ogo test ./forth # the tests, on the board, seco
 flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
+flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
 scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT and FILE tests on the board, INCLUDEd by 9P, half a minute; errors: 0
 ogo loadp2 -t -9 . -b 230400 oforth.binary       # the REPL with INCLUDE serving this directory (under the lock)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary

@@ -17,7 +17,7 @@ It is the third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
-**Status, 2026-10-29: milestone M2 done, M3 and M4 begun.** A REPL on the serial
+**Status, 2026-10-29: milestones M2 and M3 done, M4 begun.** A REPL on the serial
 line compiles every colon definition to P2 machine code: 111 primitives
 copied in as P2 instructions, literals folded into the instructions that
 use them, small words inlined, a call in tail position made a jump, a loop
@@ -26,7 +26,9 @@ repeated by REP, calls with the return address in a register
 and the return stack in LUT RAM, and 131 words written in OctoGo that
 compiled code calls back into. The P2's pins, smart pins, clocks, locks
 and LUT are words named after OctoGo's `p2` package's functions, and
-`RUN` runs a word on a cog of its own. `INCLUDE` and the FILE words read and write the host's files, over the
+`RUN` runs a word on a cog of its own. An OctoGo program embeds the
+Forth by copying a directory, and makes functions of its own words.
+`INCLUDE` and the FILE words read and write the host's files, over the
 serial line. It passes the CORE, CORE
 EXT and FILE tests of the Forth-2012 test suite on the board, with 0
 errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
@@ -130,6 +132,43 @@ two cogs talk through hub RAM. So
 blinks the two LEDs from two cogs while the REPL goes on. With the REPL
 on cog 0 and the console's reader on cog 1, six cogs are free; a `RUN`
 takes 5,282 clocks until the cog has its cells.
+
+## In a program of its own
+
+[forth/](forth) is the whole Forth, importing nothing but `p2` and
+`unsafe`, so an OctoGo program has it by copying the directory into its
+module, OctoGo taking no external dependencies. The program gives it code
+and data spaces and a console, and makes functions of its own words, which
+take their arguments by `forth.Pop` and give their results by
+`forth.Push`:
+
+```go
+var code, data [8192]uint32
+
+func blink() { // BLINK ( n ms -- )
+	ms := int(forth.Pop())
+	n := int(forth.Pop())
+	for i := 0; i < n; i++ {
+		p2.PinToggle(56)
+		p2.WaitMs(ms)
+	}
+}
+
+func main() {
+	forth.Serial()
+	forth.Init(code[:], data[:])
+	forth.Define("BLINK", 2, blink)
+	forth.Evaluate(": TWICE ( ms -- ) 2 SWAP BLINK ;")
+	forth.Quit()
+}
+```
+
+`Define` is given how many cells the function takes, which the Forth
+checks before it calls it, as it does for its own words. Such a word runs
+on the REPL's cog, so `RUN` refuses a word that uses one. `forth.Serial`
+is the console the REPL has, a cog reading the serial line into a ring.
+[example/](example) is such a program, with words for the EDGE's LEDs and
+pins: `ogo run ./example`.
 
 ## Three Forths on one board
 
