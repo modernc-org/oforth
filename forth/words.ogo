@@ -161,6 +161,21 @@ const (
 	oUnescape
 	oSubstitute
 	oReplaces
+	oQuestion
+	oDump
+	oKeyQ
+	oBracketIf
+	oBracketElse
+	oBracketThen
+	oBracketDefined
+	oBracketUndefined
+	oAhead
+	oBye
+	oCsPick
+	oCsRoll
+	oNToR
+	oNRFrom
+	oSynonym
 
 	// The functions Define makes words, from here on (embed.ogo).
 	oExported
@@ -198,7 +213,9 @@ INCLUDE-FILE OPEN-FILE CLOSE-FILE READ-FILE READ-LINE BIN CREATE-FILE
 WRITE-FILE WRITE-LINE FLUSH-FILE FILE-POSITION FILE-SIZE REPOSITION-FILE
 RESIZE-FILE DELETE-FILE RENAME-FILE FILE-STATUS REQUIRED REQUIRE RUN
 CATCH THROW 2CONSTANT 2VARIABLE 2VALUE 2LITERAL D. D.R M*/ -TRAILING
-BLANK CMOVE CMOVE> COMPARE SEARCH SLITERAL UNESCAPE SUBSTITUTE REPLACES`
+BLANK CMOVE CMOVE> COMPARE SEARCH SLITERAL UNESCAPE SUBSTITUTE REPLACES ?
+DUMP KEY? [IF] [ELSE] [THEN] [DEFINED] [UNDEFINED] AHEAD BYE CS-PICK
+CS-ROLL N>R NR> SYNONYM`
 
 const fIC = fImmediate | fCompile
 
@@ -246,6 +263,12 @@ var octoFlags = [...]struct{ id, flags uint8 }{
 	{oRecursive, fIC},
 	{o2Literal, fIC},
 	{oSLiteral, fIC},
+	{oBracketIf, fImmediate},
+	{oBracketElse, fImmediate},
+	{oBracketThen, fImmediate},
+	{oBracketDefined, fImmediate},
+	{oBracketUndefined, fImmediate},
+	{oAhead, fIC},
 }
 
 func octoWords() {
@@ -287,6 +310,14 @@ func octoWords() {
 	constWord(">IN", dataBase()+cellToIn*4)
 	constWord("DP", dataBase()+cellDP*4)
 	constWord("PAD", uint32(uintptr(unsafe.Pointer(&pad[0]))))
+	alias("MS", "WAIT-MS")
+}
+
+// alias defines name as another name of the primitive of, MS of WAIT-MS.
+func alias(name, of string) {
+	o := findStr(of)
+	w := defineStr(name, kPrim, words[o].flags)
+	words[w].id, words[w].xt, words[w].size = words[o].id, words[o].xt, words[o].size
 }
 
 func findStr(s string) int {
@@ -488,6 +519,10 @@ func needs(id int) int {
 		return 3
 	case oMStarSlash, oCompare, oSearch, oSubstitute, oReplaces:
 		return 4
+	case oQuestion, oBracketIf, oCsPick, oCsRoll, oNToR:
+		return 1
+	case oDump:
+		return 2
 	}
 	if i := id - oExported; i >= 0 && i < nexported {
 		return int(exportedIn[i])

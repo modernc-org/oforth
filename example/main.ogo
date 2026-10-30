@@ -63,5 +63,6 @@ func main() {
 	forth.Define("PINS", 0, pins)
 	forth.Evaluate(": COUNT-UP ( n -- ) 0 ?DO I LEDS 250 WAIT-MS LOOP 0 LEDS ;")
 	forth.Banner()
-	forth.Quit()
+	forth.Quit() // until BYE
+	forth.Exit(0)
 }

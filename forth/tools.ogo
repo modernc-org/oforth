@@ -1,0 +1,213 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"p2"
+)
+
+// The TOOLS words but .S, SEE and WORDS, which are words.ogo's, and TOOLS
+// EXT's but the wordlists' and the assembler's, and KEY? and MS of FACILITY:
+// ? DUMP KEY? MS AHEAD BYE the [IF]s CS-PICK CS-ROLL N>R NR> SYNONYM.
+
+func octoTools(id int) {
+	switch id {
+	case oQuestion:
+		typeBytes(digits(peek(pop()), true))
+		emit(' ')
+	case oDump:
+		n := pop()
+		dump(pop(), n)
+	case oKeyQ:
+		push(flag(pahead < nahead || Avail != nil && Avail()))
+	case oBracketIf:
+		if pop() == 0 {
+			skipIf(1)
+		}
+	case oBracketElse:
+		skipIf(1)
+	case oBracketThen:
+	case oBracketDefined, oBracketUndefined:
+		s := nameOrAbort()
+		if !aborted {
+			push(flag(find(s) >= 0 == (id == oBracketDefined)))
+		}
+	case oAhead:
+		compileAhead()
+	case oBye:
+		bye = true
+	case oCsPick, oCsRoll:
+		csPickRoll(int(pop()), id == oCsRoll)
+	case oNToR:
+		nToR()
+	case oNRFrom:
+		nRFrom()
+	case oSynonym:
+		synonym()
+	default:
+		if !runExported(id) {
+			abort("no such OctoGo word")
+		}
+	}
+}
+
+// dump is DUMP: n bytes from a, sixteen a line, the address and the bytes in
+// hex, whatever BASE is, and the bytes as text.
+func dump(a, n uint32) {
+	for n > 0 {
+		k := minU(n, 16)
+		emit('\n')
+		hex(a, 8)
+		emit(' ')
+		for i := uint32(0); i < 16; i++ {
+			if i == 8 {
+				emit(' ')
+			}
+			emit(' ')
+			if i < k {
+				hex(uint32(peekb(a+i)), 2)
+			} else {
+				typeStr("  ")
+			}
+		}
+		typeStr("  ")
+		for i := uint32(0); i < k; i++ {
+			c := peekb(a + i)
+			if c < ' ' || c > '~' {
+				c = '.'
+			}
+			emit(c)
+		}
+		a += k
+		n -= k
+	}
+}
+
+// skipping is how many [IF]s deep a line of the console ended while it was
+// being skipped, for the next line to go on with (line).
+var skipping int
+
+// skipIf skips the input past the [ELSE] or the [THEN] that ends the part
+// being skipped, n [IF]s deep, counting the [IF]s and [THEN]s within it; a
+// file's lines are read on, and when a line of the console ends first, the
+// next one goes on. Words are what is skipped, so an [ELSE] in a string or a
+// comment counts, as ANS has it.
+func skipIf(n int) {
+	for !aborted {
+		s := parseName()
+		switch {
+		case len(s) == 0:
+			if k := inFile(); k >= 0 && refillFile(k) {
+				continue
+			}
+			if sourceID == 0 {
+				skipping = n
+			}
+			return
+		case isName(s, "[IF]"):
+			n++
+		case isName(s, "[ELSE]"):
+			if n == 1 {
+				return
+			}
+		case isName(s, "[THEN]"):
+			if n--; n == 0 {
+				return
+			}
+		}
+	}
+}
+
+// isName answers whether s is the name t, which is in upper case, as a word's
+// name is found regardless of case.
+func isName(s []byte, t string) bool {
+	if len(s) != len(t) {
+		return false
+	}
+	for i, c := range s {
+		if upper(c) != t[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// csPickRoll is CS-PICK, or CS-ROLL when roll is set, of the u-th entry of
+// the control-flow stack. A loop's entry picked or rolled could end a loop
+// twice, or another one, where the loop cache keeps a stack of its own, so
+// the cache is off for the rest of the definition, its loops running from
+// hub RAM as DOES> makes them.
+func csPickRoll(u int, roll bool) {
+	if u < 0 || u >= ncs {
+		abort("unbalanced control structure")
+		return
+	}
+	cacheOff = true
+	i := ncs - 1 - u
+	e := cs[i]
+	if !roll {
+		csPush(int(e.kind), int(e.at), int(e.leave))
+		return
+	}
+	copy(cs[i:ncs-1], cs[i+1:ncs])
+	cs[ncs-1] = e
+}
+
+// nToR is N>R: n cells and n onto the return stack, from which NR> takes
+// them back in their order.
+func nToR() {
+	n := pop()
+	rp := engGetRp()
+	switch {
+	case n > uint32(depth()):
+		abort("stack underflow")
+		return
+	case n >= rp-dsMax:
+		abort("return stack overflow")
+		return
+	}
+	for i := uint32(0); i < n; i++ {
+		rp--
+		p2.WriteLUT(rp, pop())
+	}
+	rp--
+	p2.WriteLUT(rp, n)
+	engSetRp(rp)
+}
+
+// nRFrom is NR>.
+func nRFrom() {
+	rp := engGetRp()
+	if rp >= rp0 || p2.ReadLUT(rp) >= rp0-rp {
+		abort("return stack underflow")
+		return
+	}
+	n := p2.ReadLUT(rp)
+	rp++
+	for i := uint32(0); i < n; i++ {
+		push(p2.ReadLUT(rp + i))
+	}
+	engSetRp(rp + n)
+	push(n)
+}
+
+// synonym is SYNONYM: a header named as the first name, which is the second
+// in all but its name.
+func synonym() {
+	s := nameOrAbort()
+	if aborted {
+		return
+	}
+	o := findOrAbort()
+	if o < 0 {
+		return
+	}
+	w := define(s, words[o].kind, 0)
+	if w < 0 {
+		return
+	}
+	name, nlen, next := words[w].name, words[w].nlen, words[w].next
+	words[w] = words[o]
+	words[w].name, words[w].nlen, words[w].next = name, nlen, next
+	words[w].flags &^= fHidden
+}

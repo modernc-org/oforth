@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-eight tests with the card's); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-nine tests by the TOOLS words); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -87,7 +87,12 @@ passing; then the DOUBLE and STRING word sets, `doubletest.fth` and
 `stringtest.fth` passing; then the SD card behind the file layer, the
 same night, a name after `sd:` being the card's (the user's choices of
 2026-10-29 below), `scripts/f2012.sh -sd` running `filetest.fth` on the
-card with 0 errors. Next is the user's to choose. Not yet: a host twin. The repository is on
+card with 0 errors; then, 2026-10-30, the first of what is left before
+going public (the user's list of that night: the words a Forth is first
+tried with, booting without a host, OctoGo's v1.0.0 and the numbers
+measured again with it, the README, the release): TOOLS and TOOLS EXT but
+the wordlists' and the assembler's, `KEY?` and `MS`, the suite's
+`toolstest.fth` passing. Not yet: a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -116,7 +121,7 @@ The files:
   copying the one directory: OctoGo takes no external dependencies,
   every import being a directory of the program's own module. The
   engine moved there from `eng/` at the user's word, 2026-10-29.
-  `main.ogo` is `Serial`, `Init`, `Banner` and `Quit`.
+  `main.ogo` is `Serial`, `Init`, `Banner`, `Quit` and `Exit`.
 - `example/`: M3's demo, a program embedding the Forth with three words
   of its own, LEDS, BLINK and PINS, and a Forth word, COUNT-UP, defined
   at start by `Evaluate` (`ogo run ./example`).
@@ -356,7 +361,13 @@ All measured or read in this session and recorded with their sources in
   arithmetic being templates, D+ to 2ROT, branchless (`octoDouble`,
   after `octoException`); `string.ogo` the STRING word set, the
   substitutions of REPLACES in `subs`, 256 bytes (`octoString`, after
-  `octoDouble`); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
+  `octoDouble`); `tools.ogo` TOOLS and TOOLS EXT but the wordlists' and
+  the assembler's, `KEY?`, and `MS`, an `alias` of `WAIT-MS`
+  (`octoTools`, after `octoString`; `[IF]` skips by `skipIf`, a file's
+  lines by refilling and the console's by `skipping`, which `line` goes
+  on with; CS-PICK and CS-ROLL set `cacheOff`, a picked loop's entry
+  being able to end the loop cache's loop twice; BYE makes `Quit`
+  return); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
   `Serial`; `sd.ogo` the SD card's blocks and `fat.ogo` its FAT32 volume,
   under the file layer; `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
@@ -499,6 +510,10 @@ All measured or read in this session and recorded with their sources in
   (`runExported`). f takes its arguments by `Pop` and gives its results
   by `Push`. `Serial` is the console `main.ogo` had: Console, `Key` and
   `Avail` over a ring a goroutine fills by `p2.ReadByte`. `TestDefine`.
+  `Quit` returns after BYE, and `Exit(status)` writes the loader's exit
+  sequence, $FF $00 and the status, which ends `ogo run`'s terminal (not
+  `ogo loadp2 -t`'s, which does not look for it); the two mains call it
+  after `Quit`, an OctoGo main returning sending nothing.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
@@ -551,7 +566,7 @@ flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
 flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
-scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE and STRING tests on the board, INCLUDEd by 9P, a minute; errors: 0
+scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS tests on the board, INCLUDEd by 9P, a minute; errors: 0
 scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
 scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)

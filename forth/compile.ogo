@@ -565,6 +565,13 @@ func compileElse() {
 	csPush(csOrig, at, 0)
 }
 
+// compileAhead is AHEAD, a branch forward that THEN resolves.
+func compileAhead() {
+	flushLit()
+	csPush(csOrig, cp, 0)
+	emitAbs(tJmp, 0)
+}
+
 func compileThen() {
 	flushLit()
 	e := csPop(csOrig)

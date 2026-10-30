@@ -20,5 +20,6 @@ func main() {
 	forth.Serial()
 	forth.Init(code[:], data[:])
 	forth.Banner()
-	forth.Quit()
+	forth.Quit() // until BYE
+	forth.Exit(0)
 }

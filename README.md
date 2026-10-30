@@ -17,23 +17,26 @@ It is the third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
-**Status, 2026-10-29: milestones M2 and M3 done, M4 begun.** A REPL on the serial
+**Status, 2026-10-30: milestones M2 and M3 done, M4 begun.** A REPL on the serial
 line compiles every colon definition to P2 machine code: 127 primitives
 copied in as P2 instructions, literals folded into the instructions that
 use them, small words inlined, a call in tail position made a jump, a loop
 without calls run from cog RAM, a DO loop there with no branch in its body
 repeated by REP, calls with the return address in a register
-and the return stack in LUT RAM, and 150 words written in OctoGo that
+and the return stack in LUT RAM, and 165 words written in OctoGo that
 compiled code calls back into. The P2's pins, smart pins, clocks, locks
 and LUT are words named after OctoGo's `p2` package's functions, and
 `RUN` runs a word on a cog of its own. An OctoGo program embeds the
 Forth by copying a directory, and makes functions of its own words.
 `INCLUDE` and the FILE words read and write the host's files, over the
-serial line, `CATCH` and `THROW` catch errors, the system's with ANS's
-codes, and the DOUBLE and STRING word sets are there, double numbers
-written with a point, `1.`. It passes the CORE, CORE EXT, FILE,
-EXCEPTION, DOUBLE and STRING tests of the Forth-2012 test suite on the
-board, with 0
+serial line, and the SD card's, `CATCH` and `THROW` catch errors, the
+system's with ANS's codes, and the DOUBLE, STRING and TOOLS word sets are
+there, double numbers written with a point, `1.`, and TOOLS EXT but its
+wordlists and assembler: `?`, `DUMP`, `[IF]`, `[ELSE]`, `[THEN]`,
+`[DEFINED]`, `[UNDEFINED]`, `AHEAD`, `CS-PICK`, `CS-ROLL`, `N>R`, `NR>`,
+`SYNONYM` and `BYE`, which ends `ogo run`; `KEY?` and `MS` too. It
+passes the CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS
+tests of the Forth-2012 test suite on the board, with 0
 errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
 word's machine code as the words it was compiled from. There is no
 FLOATING, no
@@ -195,14 +198,17 @@ func main() {
 	forth.Init(code[:], data[:])
 	forth.Define("BLINK", 2, blink)
 	forth.Evaluate(": TWICE ( ms -- ) 2 SWAP BLINK ;")
-	forth.Quit()
+	forth.Quit() // until BYE
+	forth.Exit(0)
 }
 ```
 
 `Define` is given how many cells the function takes, which the Forth
 checks before it calls it, as it does for its own words. Such a word runs
 on the REPL's cog, so `RUN` refuses a word that uses one. `forth.Serial`
-is the console the REPL has, a cog reading the serial line into a ring.
+is the console the REPL has, a cog reading the serial line into a ring;
+`Quit` returns after `BYE`, and `forth.Exit` writes the loader's exit
+sequence, which ends `ogo run` with the status given.
 [example/](example) is such a program, with words for the EDGE's LEDs and
 pins: `ogo run ./example`.
 

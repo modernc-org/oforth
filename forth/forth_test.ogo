@@ -1113,3 +1113,32 @@ func TestCard(t *testing.T) {
 		}
 	}
 }
+
+func TestTools(t *testing.T) {
+	check(t, "VARIABLE tq 42 tq ! tq ?", "42 ")
+	checkHas(t, "CREATE td 3 C, 65 C, 0 C, td 3 DUMP", "  03 41 00 ")
+	checkHas(t, "td 3 DUMP", "  .A.")
+	check(t, "GET-MS 20 MS GET-MS SWAP - DUP 19 > SWAP 30 < AND .", "-1 ")
+	check(t, ": tms 20 MS ; GET-MS tms GET-MS SWAP - DUP 19 > SWAP 30 < AND .", "-1 ")
+	check(t, "KEY? .", "0 ")
+	check(t, "TRUE [IF] 1 [ELSE] 2 [THEN] . FALSE [IF] 1 [ELSE] 2 [THEN] .", "1 2 ")
+	check(t, "FALSE [IF] 1 TRUE [IF] 2 [ELSE] 3 [THEN] [ELSE] 4 [THEN] .", "4 ")
+	check(t, "TRUE [IF] 1 FALSE [if] 2 [else] 3 [then] [ELSE] 4 [THEN] . .", "3 1 ")
+	check(t, ": tif [ 0 ] [IF] 1 [ELSE] 2 [THEN] ; tif .", "2 ")
+	// Lines of the console are skipped until the [THEN].
+	check(t, "FALSE [IF] 1\n2 .\n[ELSE] 3 [THEN] .", "3 ")
+	check(t, "[ELSE] 5 .\n6 . [THEN] 7 .", "7 ")
+	check(t, "[DEFINED] DUP . [UNDEFINED] DUP . [DEFINED] tnosuch . [UNDEFINED] tnosuch .", "-1 0 0 -1 ")
+	check(t, ": tah AHEAD 1 THEN 2 ; tah .", "2 ")
+	// ?REPEAT as ANS has it, CS-PICK leaving the loop's entry twice.
+	check(t, ": t?rep 0 CS-PICK POSTPONE UNTIL ; IMMEDIATE : tpk 0 BEGIN 1+ DUP 2 > t?rep DUP 5 = UNTIL ; tpk .", "5 ")
+	check(t, ": t?done POSTPONE IF 1 CS-ROLL ; IMMEDIATE : trl 3 BEGIN DUP t?done DUP . 1- REPEAT DROP ; trl", "3 2 1 ")
+	check(t, ": tntr N>R -1 NR> ; 1 2 3 3 tntr . . . . . 7 0 tntr . . .", "3 3 2 1 -1 0 -1 7 ")
+	check(t, ": tsyn1 1234 ; SYNONYM tsyn2 tsyn1 tsyn2 . SYNONYM tdup DUP 5 tdup . .", "1234 5 5 ")
+	check(t, "BYE", "")
+	if !bye {
+		println("BYE did not end Quit")
+		t.Fail()
+	}
+	bye = false
+}

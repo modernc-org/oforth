@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file.
 
 # f2012.sh runs the Forth-2012 test suite's tests of the CORE, CORE EXT, FILE,
-# EXCEPTION, DOUBLE and STRING word sets (Gerry Jackson's suite, after John Hayes' tests) on the board:
+# EXCEPTION, DOUBLE, STRING and TOOLS word sets (Gerry Jackson's suite, after John Hayes' tests) on the board:
 # the REPL INCLUDEs the suite's files from build/f2012, which the loader
 # serves by 9P, and the script prints what failed and the tester's count of
 # errors, which must be 0. The suite is fetched at a pinned commit into
@@ -43,6 +43,7 @@ b09d273fb8a8afa1438c6f8bc0a43a66e02a171d6f9e0d413c8777c58e126ba3 required-helper
 92bce976b74a799f0a7c9f4200e46832eea6371d117e522dea4550a6fe067083 exceptiontest.fth
 28d769b65563b6df8085a1bc5c2a36e8cc2bfffe8d6040167079d7c0e1fc37ee doubletest.fth
 6f78aafab33acf2c3e09ec428447d539e2f8afe71fa3ca2ed329b2999b129cde stringtest.fth
+d410235d133d9eb6f0b322a3b1ac647354cbe12f37d1ce8a3f2cb2317a5faa7f toolstest.fth
 SUMS
 if [ $sd != filetest.fth ]; then
 	sed 's/S" \(fatest\|FATEST\)/S" sd:\1/' $dir/filetest.fth > $dir/$sd
@@ -60,7 +61,7 @@ flock -o -w 900 /tmp/p2-board.lock sh -c "
 	fuser -s $port && { echo 'port busy'; exit 1; }
 	(sleep 4
 	printf 'INCLUDE tester.fr\\rINCLUDE core.fr\\rtyped for ACCEPT\\r'
-	for f in coreplustest.fth utilities.fth coreexttest.fth $sd exceptiontest.fth doubletest.fth stringtest.fth; do printf 'INCLUDE %s\\r' \$f; done
+	for f in coreplustest.fth utilities.fth coreexttest.fth $sd exceptiontest.fth doubletest.fth stringtest.fth toolstest.fth; do printf 'INCLUDE %s\\r' \$f; done
 	printf 'DECIMAL CR .( errors: ) #ERRORS @ .\\r'
 	for i in \$(seq 240); do grep -q -a 'errors: [0-9]' $dir/raw.txt 2>/dev/null && break; sleep 0.5; done
 	sleep 1; printf '\\035') |

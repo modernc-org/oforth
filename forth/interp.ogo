@@ -111,6 +111,7 @@ func abortQuiet(code uint32) {
 }
 
 func reset() {
+	skipping = 0
 	engSetDsp(ds0)
 	engSetRp(rp0)
 	discard()
@@ -397,6 +398,10 @@ func line() bool {
 	nmore = 0
 	nwhere = 0
 	fromTib()
+	if n := skipping; n > 0 {
+		skipping = 0
+		skipIf(n)
+	}
 	interpret()
 	checkStacks()
 	if !aborted {
@@ -523,9 +528,12 @@ func accept(a uint32, max int) int {
 	}
 }
 
-// Quit is the REPL: it reads a line, interprets it and says ok, for ever.
+// Quit is the REPL: it reads a line, interprets it and says ok, until BYE.
+var bye bool
+
 func Quit() {
-	for {
+	bye = false
+	for !bye {
 		ntib = accept(uint32(uintptr(unsafe.Pointer(&tib[0]))), len(tib))
 		if line() {
 			if compiling() {

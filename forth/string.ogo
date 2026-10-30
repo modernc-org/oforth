@@ -92,9 +92,7 @@ func octoString(id int) {
 		n1 := pop()
 		replaces(memory(a2, n2), memory(pop(), n1))
 	default:
-		if !runExported(id) {
-			abort("no such OctoGo word")
-		}
+		octoTools(id)
 	}
 }
 
