@@ -21,14 +21,14 @@ DST = sys.argv[2] if len(sys.argv) > 2 else "logo.png"
 SIZE = int(sys.argv[3]) if len(sys.argv) > 3 else 256
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 NAVY = (28, 55, 84, 255)   # the outlines and the "P2" label
-CX, CY = 1000, 1532        # the middle of the lighter belly, in the master
+CX, CY = 1000, 1518        # in the lighter belly, clear of its edge
 
 im = Image.open(SRC).convert("RGBA")
 assert im.size == (2000, 2000), im.size
 d = ImageDraw.Draw(im)
 
-big = ImageFont.truetype(FONT, 230)
-small = ImageFont.truetype(FONT, 110)
+big = ImageFont.truetype(FONT, 205)
+small = ImageFont.truetype(FONT, 98)
 w4 = d.textlength("4", font=big)
 wth = d.textlength("th", font=small)
 gap = 8

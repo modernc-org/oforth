@@ -1,0 +1,11 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Version is the release this Forth is, and release what Banner says of
+// it, a space and Version. Both are empty in the repository:
+// scripts/release.sh writes the tag here in the copy of the sources it
+// builds a release from.
+const Version = ""
+
+const release = ""

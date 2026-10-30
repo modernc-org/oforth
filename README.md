@@ -514,6 +514,11 @@ scripts/bench.sh          # the benchmarks on OctoForth, TAQOZ and P2XCForth
 scripts/third.sh          # the third parties' benchmarks
 ```
 
+A release: a section in `CHANGELOG.md`, commit, `git tag -a vX.Y.Z`, then
+`scripts/release.sh`, which builds the binaries from the tag's sources,
+the banner saying the version, into `build/release/vX.Y.Z/`: the zip and
+`SHA256SUMS`, for the GitHub release.
+
 The scripts fetch the third parties' code they run, the test suite, TAQOZ
 and the benchmarks, at pinned hashes into `build/`, which is never
 committed, and need `curl`, `sha256sum` and Python 3; `cardcheck.sh`

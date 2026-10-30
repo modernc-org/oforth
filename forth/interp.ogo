@@ -548,7 +548,7 @@ func Quit() {
 	}
 }
 
-// Banner says what this is.
+// Banner says what this is, and which release if it is one.
 func Banner() {
-	typeStr("OctoForth, a native-code Forth for the P2\n")
+	typeStr("OctoForth" + release + ", a native-code Forth for the P2\n")
 }

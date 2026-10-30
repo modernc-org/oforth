@@ -129,7 +129,8 @@ The files:
   siblings'.
 - `logo.png`: OctoGo's gopher with "4th" on its belly, drawn by
   `scripts/logo.py` from `../ogo/web/logo-full.png` (the user's idea of
-  2026-10-28; a draft until the user says otherwise). The gopher is Renee
+  2026-10-28, kept on 2026-10-30, the user's yes to the lettering made
+  a tenth smaller and raised, clear of the belly's edge). The gopher is Renee
   French's Go gopher, CC BY 4.0, by way of OctoGo's mascot: the README's
   attribution line stays while the logo does.
 - `main.ogo`, `forth/`: the Forth; "The Forth's architecture" below.
@@ -245,6 +246,14 @@ section 9 has the reasons:
 - Booting with no host, the user's choice of 2026-10-30: from the
   board's flash now, OctoForth taking TAQOZ's place there, and from the
   SD card later.
+- Going public, the user's words of 2026-10-30: this file goes public
+  as it is, no redactions necessary; everything of the SD card's,
+  `sd.ogo`'s notice and booting from the card among it, waits for the
+  weekend of 2026-10-31, with the user beside the board; and the
+  release is built checked, `--unchecked` only if the hub RAM runs out
+  while essential Forth words are still to be added. A release is
+  built by `scripts/release.sh` from the tag's sources, `forth.Version`
+  set to the tag, which the banner says.
 
 The bar is P2XCForth's XBYTE core, not TAQOZ: section 3.6's table has the
 clocks per operation of all three. M2 runs the Byte sieve, the empty loop
@@ -421,7 +430,10 @@ All measured or read in this session and recorded with their sources in
   on with; CS-PICK and CS-ROLL set `cacheOff`, a picked loop's entry
   being able to end the loop cache's loop twice; BYE makes `Quit`
   return); `embed.ogo` the embedding, `Define`, `Push`, `Pop`,
-  `Serial` and `Boot`; `sd.ogo` the SD card's blocks and `fat.ogo` its
+  `Serial` and `Boot`; `version.ogo` `Version`, empty but in a release,
+  and `release`, what `Banner` says of it, both written by
+  `scripts/release.sh`, so that the banner is one constant string (an
+  `if` on `Version` cost 148 bytes); `sd.ogo` the SD card's blocks and `fat.ogo` its
   FAT32 volume, and `flash.ogo` the flash's files, under the file layer;
   `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
@@ -651,6 +663,7 @@ scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION
 scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
 scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
 scripts/flash.sh                # boot/ into the board's flash, booted at every reset with no loader; checked by scripts/boot.py
+scripts/release.sh [vX.Y.Z]     # build/release/vX.Y.Z/: the zip of oforth.binary and boot.binary built from the tag, and SHA256SUMS; no board
 flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset, the flash's OctoForth answering
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
