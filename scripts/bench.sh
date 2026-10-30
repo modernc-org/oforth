@@ -4,11 +4,11 @@
 # license that can be found in the LICENSE file.
 
 # bench.sh runs the benchmarks of bench/ on the board, in clocks: OctoForth's,
-# TAQOZ Reloaded's, the one in the board's flash (V2.14.0 of 2024-02-19,
-# talked to by scripts/taqoz.py), and P2XCForth's if scripts/p2xc.sh has
-# built it. Each is a line of results:
-# the empty loop, the calls, the sieve, fib and the factorials. It takes the
-# board lock for each system; the three take about two minutes.
+# TAQOZ Reloaded's (V2.14.0 of 2024-02-19, the image scripts/taqoz.sh
+# fetches, loaded and talked to by scripts/taqoz.py), and P2XCForth's if
+# scripts/p2xc.sh has built it. Each is a line of results: the empty loop,
+# the calls, the sieve, fib and the factorials. It takes the board lock for
+# each system; the three take about two minutes.
 #
 # Usage: scripts/bench.sh [PORT]
 
@@ -16,6 +16,7 @@ set -eu
 port=${1:-/dev/ttyUSB0}
 mkdir -p build
 ogo build -o build/oforth.binary .
+taqoz=$(scripts/taqoz.sh)
 wait_port="for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done; fuser -s $port && { echo 'port busy'; exit 1; }"
 printf 'OctoForth   '
 flock -o -w 900 /tmp/p2-board.lock sh -c "$wait_port
@@ -25,7 +26,7 @@ flock -o -w 900 /tmp/p2-board.lock sh -c "$wait_port
 echo
 printf 'TAQOZ       '
 flock -o -w 900 /tmp/p2-board.lock sh -c "$wait_port
-	timeout 300 python3 -I scripts/taqoz.py $port bench/taqoz.fth" |
+	timeout 300 python3 -I scripts/taqoz.py $port $taqoz bench/taqoz.fth" |
 	tr -d '\r' | sed -n 's/^TAQOZ# [a-z]* \. --- \([0-9]*\)  *ok.*/\1/p' | tr '\n' ' '
 echo
 if [ -f build/p2xc/p2xc.binary ]; then

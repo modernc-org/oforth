@@ -4,9 +4,10 @@
 # license that can be found in the LICENSE file.
 
 # third.sh runs third parties' Forth benchmarks on the board, on OctoForth,
-# on P2XCForth if scripts/p2xc.sh has built it, and on the TAQOZ in the
-# board's flash, each at 200 MHz, timed by this host between two marks the
-# system writes around the work (scripts/session.py), in milliseconds:
+# on P2XCForth if scripts/p2xc.sh has built it, and on TAQOZ Reloaded, the
+# image scripts/taqoz.sh fetches, each at 200 MHz, timed by this host
+# between two marks the system writes around the work (scripts/session.py),
+# in milliseconds:
 #
 #   - Anton Ertl's four, the ones his "Performance of Forth systems" and
 #     Gforth's manual compare systems with: the sieve, bubble sort, matrix
@@ -125,7 +126,7 @@ for prog in $progs; do
 		case $system in
 		oforth) bin=$dir/oforth.binary ;;
 		p2xc) bin=build/p2xc/p2xc.binary; [ -f $bin ] || continue ;;
-		taqoz) bin= ;;
+		taqoz) bin=$(scripts/taqoz.sh) ;;
 		esac
 		flock -o -w 900 /tmp/p2-board.lock sh -c "$wait_port
 			timeout 1500 python3 -I scripts/session.py -log $dir/log/$system-$prog.txt $port $system $bin $f" |

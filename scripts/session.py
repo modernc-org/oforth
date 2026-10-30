@@ -15,25 +15,22 @@ The systems:
 
     oforth BINARY   OctoForth, loaded by ogo loadp2 at 230400 baud
     p2xc BINARY     P2XCForth, loaded so, its lines ended by CR LF
-    taqoz           the TAQOZ in the board's flash, booted by a reset with
-                    no loader, at 921600 baud
+    taqoz BINARY    TAQOZ Reloaded, the image scripts/taqoz.sh fetches,
+                    loaded so at 921600 baud into a cleared hub RAM
 
 It prints a line "TIME name ms" for each timed command, and writes all the
 system said to the log given with -log.
 
-Usage: scripts/session.py [-log FILE] PORT SYSTEM [BINARY] FILE
+Usage: scripts/session.py [-log FILE] PORT SYSTEM BINARY FILE
 
 Run it under the shared board lock, as every use of the port is.
 """
 
-import fcntl
 import os
 import re
 import select
-import struct
 import subprocess
 import sys
-import termios
 import time
 
 # What ends a system's answer to a line, matched against the output's end.
@@ -46,33 +43,18 @@ EOL = {"oforth": b"\r", "p2xc": b"\r\n", "taqoz": b"\r"}
 
 
 class Port:
-    """The board's serial line, directly or through ogo loadp2."""
+    """The board's serial line, through ogo loadp2."""
 
     def __init__(self, port, system, binary):
-        self.proc = None
+        loader = ["ogo", "loadp2", "-t", "-NOEOF", "-p", port, "-b", "230400"]
         if system == "taqoz":
-            self.fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
-            a = termios.tcgetattr(self.fd)
-            a[0] = a[1] = a[3] = 0
-            a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL | termios.B921600
-            a[4] = a[5] = termios.B921600
-            a[6][termios.VMIN] = a[6][termios.VTIME] = 0
-            termios.tcsetattr(self.fd, termios.TCSANOW, a)
-            dtr = struct.pack("I", termios.TIOCM_DTR)
-            fcntl.ioctl(self.fd, termios.TIOCMBIS, dtr)
-            time.sleep(0.05)
-            fcntl.ioctl(self.fd, termios.TIOCMBIC, dtr)
-            time.sleep(0.05)
-            fcntl.ioctl(self.fd, termios.TIOCMBIS, dtr)
-            termios.tcflush(self.fd, termios.TCIFLUSH)
-            self.rfd = self.wfd = self.fd
-        else:
-            self.proc = subprocess.Popen(
-                ["ogo", "loadp2", "-t", "-NOEOF", "-p", port, "-b", "230400", binary],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            self.rfd = self.proc.stdout.fileno()
-            self.wfd = self.proc.stdin.fileno()
-            os.set_blocking(self.rfd, False)
+            loader = ["ogo", "loadp2", "-ZERO", "-t", "-NOEOF", "-p", port, "-b", "921600"]
+        self.proc = subprocess.Popen(
+            loader + [binary],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.rfd = self.proc.stdout.fileno()
+        self.wfd = self.proc.stdin.fileno()
+        os.set_blocking(self.rfd, False)
 
     def write(self, b):
         os.write(self.wfd, b)
@@ -88,17 +70,14 @@ class Port:
             return b"", time.time()
 
     def close(self):
-        if self.proc:
-            try:
-                self.write(b"\x1d")
-            except OSError:
-                pass
-            try:
-                self.proc.wait(5)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-        else:
-            os.close(self.fd)
+        try:
+            self.write(b"\x1d")
+        except OSError:
+            pass
+        try:
+            self.proc.wait(5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
 
 
 def main():
@@ -107,11 +86,9 @@ def main():
     if args[:1] == ["-log"]:
         log = open(args[1], "wb")
         args = args[2:]
-    if len(args) not in (3, 4):
+    if len(args) != 4:
         sys.exit(__doc__)
-    port, system = args[0], args[1]
-    binary = args[2] if len(args) == 4 else None
-    path = args[-1]
+    port, system, binary, path = args
     lines = open(path, "rb").read().split(b"\n")
     p = Port(port, system, binary)
     ready = READY[system]

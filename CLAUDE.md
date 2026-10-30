@@ -60,8 +60,8 @@ directories, makes an image of them in `build/card`, and runs
 of a first cluster swapped, lost four clusters that night and nothing
 else; the card was mended from the host, `fsck.fat` passing again, and
 `fatLoad` since refuses a cluster that is not one, so that nothing is
-written outside the FAT. TAQOZ still boots from flash with the card in,
-saying "ERROR - INVALID PARTITION" of it. Next is M3 (the P2 words, RUN, the
+written outside the FAT. TAQOZ, with the card in, says "ERROR - INVALID
+PARTITION" of it. Next is M3 (the P2 words, RUN, the
 embedding API) or M4 (speed: inlining, tail calls, the LUT cache), the
 user's to choose; the user chose M4, begun the same night: inlining, tail
 calls and FILL in PASM done, then the loop cache (the user's "LUT cache",
@@ -92,7 +92,10 @@ going public (the user's list of that night: the words a Forth is first
 tried with, booting without a host, OctoGo's v1.0.0 and the numbers
 measured again with it, the README, the release): TOOLS and TOOLS EXT but
 the wordlists' and the assembler's, `KEY?` and `MS`, the suite's
-`toolstest.fth` passing. Not yet: a host twin. The repository is on
+`toolstest.fth` passing; then booting with no host, the same night:
+the board's flash holds OctoForth (`scripts/flash.sh`, the user's choice
+of 2026-10-30, below), and the benchmark scripts load TAQOZ into hub RAM.
+Not yet: an autostart, a host twin. The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -141,7 +144,11 @@ The files:
   `build/p2xc` with its three printed changes; `scripts/f2012.sh` fetches
   the Forth-2012 suite at a pinned commit into `build/f2012`, checks its
   hashes, and has the REPL INCLUDE it, `build/f2012` served by the
-  loader's `-9`. `build/` is ignored: the suite and P2XCForth are
+  loader's `-9`; `scripts/taqoz.sh` fetches TAQOZ Reloaded's image into
+  `build/taqoz`, which `scripts/taqoz.py` (bench.sh's) and
+  `scripts/session.py` load. `scripts/flash.sh` writes OctoForth into
+  the board's flash and `scripts/boot.py` resets the board and talks to
+  what boots. `build/` is ignored: the suite, P2XCForth and TAQOZ are
   third parties' and never committed.
 - `probe/m0`: the probe, a program of its own (`main.ogo` and the Spin2
   object `eng`), research and not the Forth: it prints clocks, and its
@@ -216,6 +223,9 @@ section 9 has the reasons:
   were copied to the host; and the driver is p2-11's `sd` made this
   package's functions, with a line saying so, `forth/` having to stay one
   directory that imports nothing of another module.
+- Booting with no host, the user's choice of 2026-10-30: from the
+  board's flash now, OctoForth taking TAQOZ's place there, and from the
+  SD card later.
 
 The bar is P2XCForth's XBYTE core, not TAQOZ: section 3.6's table has the
 clocks per operation of all three. M2 runs the Byte sieve, the empty loop
@@ -245,15 +255,32 @@ version` and the clock they were taken at, never from the estimates.
   numbers to the user, the idiomatic workaround meanwhile. A request to
   OctoGo from here is small and late while ogo is in its rc window.
 - **One P2-EDGE board** (512 KB hub RAM, PropPlug on `/dev/ttyUSB0`) is
-  shared with the ogo, p2-11 and obeam sessions. Its flash holds TAQOZ
-  Reloaded V2.14.0 (the image of 2024-02-19 from SourceForge's
-  TAQOZ/binaries), written there on 2026-10-28 at the user's word by
-  loading `_BOOT_P2.BIX` and typing `BACKUP FLASH`, and again so on
-  2026-10-29 with the SD slot empty, loaded with `-ZERO`; it had held
-  obeam's hello since 2026-10-17. After a reset with no loader the board boots it,
-  at 921600 baud, and `scripts/taqoz.py` talks to it. Its data space has no
-  room for 8 KB and it has a word FLAGS of its own, which a `:=` of the same
-  name breaks (bench/taqoz.fth). The ROM's TAQOZ, V1.1, is `ogo loadp2
+  shared with the ogo, p2-11 and obeam sessions. Its flash, a W25Q128
+  (JEDEC ID EF 70 18, 16 MB), holds OctoForth since 2026-10-30, written
+  by `scripts/flash.sh` (`ogo loadp2 -FLASH`, the loader's boot stub at
+  0 and the image from $400): the board boots it after a reset with no
+  loader, its banner at 230400 baud half a second after the reset,
+  which `scripts/boot.py` reads. The loader's `-FLASH` must keep its
+  terminal open until the banner: without `-t` it closes the port as
+  soon as it has handed the image over, which resets the board in the
+  middle of the write (the first try left 15 KB and a board that booted
+  nothing). Its helper sits at hub $7C000 while it writes, so the image
+  must end below 507,904 bytes; `oforth.binary` was 498,952. Before,
+  the flash held TAQOZ Reloaded V2.14.0 (the image of 2024-02-19 from
+  SourceForge's TAQOZ/binaries), written there on 2026-10-28 at the
+  user's word by loading `_BOOT_P2.BIX` and typing `BACKUP FLASH`, and
+  again so on 2026-10-29 with the SD slot empty, loaded with `-ZERO`;
+  it had held obeam's hello since 2026-10-17. Its first 512 KB as they
+  were, which the write erased, are in `build/flash/flash-2026-10-30.img`
+  (sha256 2df7b325...): TAQOZ's boot stub at 0, its image at
+  $1000-$30000, and a dead tail of obeam's hello at $40000-$7BA00. TAQOZ
+  is loaded into hub RAM now, `scripts/taqoz.sh` fetching the image
+  into `build/taqoz` at its hash, and `scripts/taqoz.py` and
+  `scripts/session.py` loading it by `ogo loadp2 -ZERO -t -b 921600`:
+  its clocks are those it took booted from the flash, to the clock. It
+  goes back into the flash by `BACKUP FLASH` typed to it so loaded. Its
+  data space has no room for 8 KB and it has a word FLAGS of its own,
+  which a `:=` of the same name breaks (bench/taqoz.fth). The ROM's TAQOZ, V1.1, is `ogo loadp2
   -xTAQOZ -b 115200 -t`. P2XCForth's console is at 230400 and its input
   ends lines at LF; it knows lower case only, takes no TAB for a space,
   keeps names to 19 characters, and its `+LOOP` ends only at equality. Every use of the port
@@ -492,7 +519,7 @@ All measured or read in this session and recorded with their sources in
   A pin's input follows its output a few clocks late, so a compiled
   `56 PIN-LOW 56 PIN-IN`, DRVL #56 then TESTP #56, reads the old state
   (seen on the board, 2026-10-29). REBOOT resets the board, which then
-  boots TAQOZ from flash.
+  boots what its flash holds, OctoForth since 2026-10-30.
 - **RUN** (`cog.ogo`, M3): `RUN ( x1 .. xn n xt -- cog )` fills
   `launch` (taken, xt, the end, n, the cells) and starts the engine's
   `runner` by `engStart` with the block in PTRA; the runner sets PTRB,
@@ -569,9 +596,11 @@ flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
 scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS tests on the board, INCLUDEd by 9P, a minute; errors: 0
 scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
 scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
+scripts/flash.sh                # OctoForth into the board's flash, booted at every reset with no loader; checked by scripts/boot.py
+flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset, the flash's OctoForth answering
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
-scripts/bench.sh                # the benchmarks on OctoForth, the ROM TAQOZ and P2XCForth, two minutes
+scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ Reloaded and P2XCForth, two minutes
 ```
 
 To capture a board run without a terminal, as the siblings do:

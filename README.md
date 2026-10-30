@@ -29,7 +29,8 @@ and LUT are words named after OctoGo's `p2` package's functions, and
 `RUN` runs a word on a cog of its own. An OctoGo program embeds the
 Forth by copying a directory, and makes functions of its own words.
 `INCLUDE` and the FILE words read and write the host's files, over the
-serial line, and the SD card's, `CATCH` and `THROW` catch errors, the
+serial line, and the SD card's, the board boots OctoForth from its flash
+with no host (`scripts/flash.sh`), `CATCH` and `THROW` catch errors, the
 system's with ANS's codes, and the DOUBLE, STRING and TOOLS word sets are
 there, double numbers written with a point, `1.`, and TOOLS EXT but its
 wordlists and assembler: `?`, `DUMP`, `[IF]`, `[ELSE]`, `[THEN]`,
@@ -123,6 +124,20 @@ it. The board has no clock, so what OctoForth writes is dated
 (`scripts/f2012.sh -sd`), and `scripts/cardcheck.sh` checks the card's
 volume with `fsck.fat` from an image of its blocks in use, which a
 program on the board sends; it writes nothing to the card.
+
+To run OctoForth with no host, write it into the board's flash, the
+P2-EDGE's FLASH switch on:
+
+```sh
+scripts/flash.sh
+```
+
+It writes the image by `ogo loadp2 -FLASH`, and from then on the board
+boots OctoForth at every reset or power-up that no loader answers, its
+banner coming half a second after a reset: the REPL is any terminal's at
+230400 baud, and the card's files are there, the host's not. A loader
+still loads any other program as before, and the next reset with no
+loader boots OctoForth again.
 
 ## The P2 words
 
@@ -233,8 +248,10 @@ dialect; the sieve is BYTE's of 1981 as P2XCForth's archive has it, with
 `scripts/p2xc.sh` takes from his archive with his other block words, none
 of them being in this repository. Taken as they are:
 
-- TAQOZ is TAQOZ Reloaded V2.14.0, its author's image of 2024-02-19, from
-  the board's flash at 200 MHz. Its empty loop takes the 32 clocks an
+- TAQOZ is TAQOZ Reloaded V2.14.0, its author's image of 2024-02-19, at
+  200 MHz, which `scripts/taqoz.sh` fetches and the scripts load into hub
+  RAM; booted from the board's flash, where it was until OctoForth went
+  there, it took the same clocks. Its empty loop takes the 32 clocks an
   iteration its documentation gives. Its sieve array is at a fixed hub
   address in its free room, its data space having no room for 8 KB, and is
   named `fl`, TAQOZ having a FLAGS of its own.
