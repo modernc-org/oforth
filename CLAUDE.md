@@ -99,7 +99,10 @@ then files in the flash, a name after `flash:`, and a startup file,
 `flash:boot.fth`, which `boot/`, the program the flash holds, interprets
 first unless a key comes within half a second (the user's yes of
 2026-10-30 to a source file rather than a saved dictionary, TAQOZ's
-BACKUP, which a new build would make worthless). Not yet: a host twin.
+BACKUP, which a new build would make worthless); then the README
+rewritten for going public, with an installation, and a CHANGELOG, the
+same day, the numbers to be measured again with OctoGo v1.0.0. Not yet:
+a host twin.
 The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
@@ -115,9 +118,15 @@ The files:
   milestones M0 to M4 (6), the risks (7), what OctoGo gets (8), the open
   points for the discussion (9), housekeeping (10) and the sources. It is
   plain ASCII with `--` for a dash; keep it so.
-- `README.md`: what it is, what runs and what does not, and the first
-  numbers. The slogan, "May the Forth be with you.", is the user's choice of
-  2026-10-28. `LICENSE` and `AUTHORS` as the siblings'.
+- `README.md`: what it is, the installation (a release's binaries, for
+  the GitHub mirror's releases page, or from source), getting started,
+  what it has and has not, the P2 words, the embedding, the benchmarks,
+  how it works and the repository; rewritten for going public on
+  2026-10-30, obeam's the model, its GitLab/GitHub table too. The
+  slogan, "May the Forth be with you.", is the user's choice of
+  2026-10-28. `CHANGELOG.md` as obeam's, the first release under
+  Unreleased until it is tagged. `LICENSE` and `AUTHORS` as the
+  siblings'.
 - `logo.png`: OctoGo's gopher with "4th" on its belly, drawn by
   `scripts/logo.py` from `../ogo/web/logo-full.png` (the user's idea of
   2026-10-28; a draft until the user says otherwise). The gopher is Renee
@@ -274,7 +283,10 @@ version` and the clock they were taken at, never from the estimates.
   terminal open until the banner: without `-t` it closes the port as
   soon as it has handed the image over, which resets the board in the
   middle of the write (the first try left 15 KB and a board that booted
-  nothing). Its helper sits at hub $7C000 while it writes, so the image
+  nothing). FlexProp's `loadp2` 0.077 (modernc.org/loadp2 v0.0.2) loads
+  OctoForth into RAM and serves its 9P, but `boot/` written into the
+  flash by its `-FLASH -t` booted nothing (once, 2026-10-30, the banner
+  having come); `ogo loadp2`, 0.078, wrote it again, booting. Its helper sits at hub $7C000 while it writes, so the image
   must end below 507,904 bytes; `boot/`'s was 505,660 with the flash's
   files and `Boot`, 2,244 bytes short, `main.ogo`'s 504,764. The loader
   erases no more than it writes (blocks 0 to 7, the survey of 2026-10-30

@@ -8,52 +8,80 @@ by way of [OctoGo](https://gitlab.com/cznic/ogo)'s.*
 
 # OctoForth
 
-OctoForth is to be a Forth for the
+OctoForth is a Forth for the
 [Parallax Propeller 2](https://www.parallax.com/propeller-2/), written in
 [OctoGo](https://pkg.go.dev/modernc.org/ogo), that compiles every colon
-definition to P2 machine code the moment it is defined. Its short name, the
-repository's, is `oforth`, as OctoGo's is `ogo` and OctoBeam's is `obeam`.
-It is the third program of size in OctoGo, after
+definition to P2 machine code the moment it is defined: the primitives
+copied in as P2 instructions, literals folded into them, small words
+inlined, a call in tail position made a jump, and loops without calls run
+from cog RAM. On the benchmarks below it runs about three to ten times as
+fast as the P2's other Forths, TAQOZ and P2XCForth, on the same board, and
+its empty loops 16 to 68 times as fast. Its short name, the repository's,
+is `oforth`, as OctoGo's is `ogo` and OctoBeam's is `obeam`. It is the
+third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
 
-**Status, 2026-10-30: milestones M2 and M3 done, M4 begun.** A REPL on the serial
-line compiles every colon definition to P2 machine code: 127 primitives
-copied in as P2 instructions, literals folded into the instructions that
-use them, small words inlined, a call in tail position made a jump, a loop
-without calls run from cog RAM, a DO loop there with no branch in its body
-repeated by REP, calls with the return address in a register
-and the return stack in LUT RAM, and 165 words written in OctoGo that
-compiled code calls back into. The P2's pins, smart pins, clocks, locks
-and LUT are words named after OctoGo's `p2` package's functions, and
-`RUN` runs a word on a cog of its own. An OctoGo program embeds the
-Forth by copying a directory, and makes functions of its own words.
-`INCLUDE` and the FILE words read and write the host's files, over the
-serial line, the SD card's and the board's flash's, the board boots
-OctoForth from its flash with no host (`scripts/flash.sh`), interpreting
-a startup file there first, `CATCH` and `THROW` catch errors, the
-system's with ANS's codes, and the DOUBLE, STRING and TOOLS word sets are
-there, double numbers written with a point, `1.`, and TOOLS EXT but its
-wordlists and assembler: `?`, `DUMP`, `[IF]`, `[ELSE]`, `[THEN]`,
-`[DEFINED]`, `[UNDEFINED]`, `AHEAD`, `CS-PICK`, `CS-ROLL`, `N>R`, `NR>`,
-`SYNONYM` and `BYE`, which ends `ogo run`; `KEY?` and `MS` too. It
-passes the CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS
-tests of the Forth-2012 test suite on the board, with 0
-errors (`scripts/f2012.sh`, which INCLUDEs them), and `SEE` shows a
-word's machine code as the words it was compiled from. There is no
-FLOATING, no
-multitasking within a cog, and nothing protects a word that jumps into
-garbage: it takes the REPL down with it. The research and the decisions
-behind it are in [ASSESSMENT.md](ASSESSMENT.md).
+It has the Forth-2012 standard's CORE, CORE EXT, DOUBLE, EXCEPTION, FILE,
+STRING and TOOLS word sets, whose tests in the Forth-2012 test suite pass
+on the board with 0 errors; the P2's pins, smart pins, clocks, locks and
+LUT as words; `RUN`, which runs a word on a cog of its own; files on the
+host, read and written over the serial line, on the SD card and in the
+board's flash; and a startup file, so that the board boots a Forth program
+with no computer attached. An OctoGo program embeds it by copying a
+directory.
 
-## Try it
+The repository you are currently viewing might be a mirror. Please review the
+guidelines below based on where you are viewing this:
 
-With [OctoGo](https://gitlab.com/cznic/ogo) installed and a P2 board on the
-serial port:
+| Platform | Role | Contributing Guidelines |
+| :--- | :--- | :--- |
+| **GitLab** | **Primary Source** | This is the canonical repository ([`cznic/oforth`](https://gitlab.com/cznic/oforth)). Development happens here. |
+| **GitHub** | **Mirror** | This is a mirror ([`modernc-org/oforth`](https://github.com/modernc-org/oforth)), where the release binaries are published. We **do accept** Issues and Pull Requests here for your convenience! <br> *Note: PRs submitted here will be manually merged into the GitLab source, so please allow extra time for processing.* |
 
-```sh
-ogo run
-```
+## Installation
+
+OctoForth runs on a Propeller 2 board with a 20 MHz crystal and a serial
+port to a computer. It is tested on a P2-EDGE (P2-EC), whose SD card slot
+and flash, on pins P58 to P61, are the ones its files use. Its console is
+at 230400 baud. Either:
+
+- **A release's binaries**, no OctoGo needed: from the
+  [releases page](https://github.com/modernc-org/oforth/releases),
+  `oforth.binary`, the REPL, which a P2 loader loads into the board's RAM,
+  and `boot.binary`, the same REPL for the board's flash, which runs a
+  startup file. FlexProp's `loadp2` loads them:
+
+  ```sh
+  loadp2 -t -b 230400 oforth.binary
+  ```
+
+- **From source**, with OctoGo v1.0.0-rc.3 or newer, which carries the
+  compiler and the loader (`go install modernc.org/ogo@latest`, with Go 1.26
+  or newer; see [its README](https://gitlab.com/cznic/ogo)):
+
+  ```sh
+  git clone https://gitlab.com/cznic/oforth
+  cd oforth
+  ogo run
+  ```
+
+  `ogo run` builds `oforth.binary`, loads it into the board's RAM and opens
+  a terminal.
+
+The loader finds the board by itself; with several, name the port: `-p
+/dev/ttyUSB0` (`-p COM3` on Windows). On Linux the serial port belongs to
+a group, usually `dialout` (`ls -l /dev/ttyUSB0` shows it): join it once,
+`sudo usermod -aG dialout $USER`, and log in again. On Windows, run the
+loader from `cmd.exe` or PowerShell, not from git-bash, MSYS2 or Cygwin.
+Ctrl-] leaves the terminal, and `BYE` ends `ogo run`. A program loaded
+into RAM is gone at the next reset; the flash keeps one (below).
+
+## Getting started
+
+### The REPL
+
+Loaded, it says who it is and takes a line at a time:
 
 ```
 OctoForth, a native-code Forth for the P2
@@ -67,7 +95,11 @@ SEE sq sq is a colon definition
  ok
 ```
 
-Pasted source works: a cog of its own reads the serial line.
+`SEE` shows a word's machine code as the words it was compiled from.
+Names are found regardless of case, and a cell is 32 bits. Pasted source
+works: a cog of its own reads the serial line.
+
+### The host's files
 
 To INCLUDE files, run it with the loader's file server, which serves a
 directory of the host by 9P over the same serial line:
@@ -76,8 +108,8 @@ directory of the host by 9P over the same serial line:
 ogo run -9 .
 ```
 
-(`ogo run -9` is OctoGo v1.0.0-rc.3's; with an older one, `ogo build`
-and `ogo loadp2 -t -9 . -b 230400 oforth.binary`.)
+or, with a release's binary, `loadp2 -t -9 . -b 230400 oforth.binary`.
+Then
 
 ```
 INCLUDE bench/oforth.fth
@@ -94,6 +126,8 @@ is reported with its name and the line's number, and a `(` comment in a
 file may go on over lines. Under a
 loader with no `-9`, such as a plain `ogo run`, INCLUDE gives up after three
 seconds, saying so, the bytes of its request showing on the terminal.
+
+### The SD card
 
 A name after `sd:` is a file on the SD card in the board's slot, a FAT32
 volume, the card's first partition or the whole card, and every FILE
@@ -121,10 +155,9 @@ it was written; one open is neither deleted, renamed nor opened for
 writing again; `RENAME-FILE` renames within a directory, as on the
 host, and no directory is made, the FILE word set having no word for
 it. The board has no clock, so what OctoForth writes is dated
-1980-01-01. The Forth-2012 suite's FILE tests pass on the card too
-(`scripts/f2012.sh -sd`), and `scripts/cardcheck.sh` checks the card's
-volume with `fsck.fat` from an image of its blocks in use, which a
-program on the board sends; it writes nothing to the card.
+1980-01-01.
+
+### The flash, and booting with no host
 
 To run OctoForth with no host, write it into the board's flash, the
 P2-EDGE's FLASH switch on:
@@ -133,15 +166,18 @@ P2-EDGE's FLASH switch on:
 scripts/flash.sh
 ```
 
-It writes the image by `ogo loadp2 -FLASH`, and from then on the board
-boots OctoForth at every reset or power-up that no loader answers, its
-banner coming half a second after a reset: the REPL is any terminal's at
-230400 baud, and the card's files are there, the host's not. A loader
-still loads any other program as before, and the next reset with no
-loader boots OctoForth again.
+or, with a release's binary, `loadp2 -FLASH -t -b 230400 boot.binary`,
+leaving the terminal by Ctrl-] once the banner has come: closing the port
+earlier resets the board in the middle of the write. It takes `loadp2`
+0.078 or newer, FlexProp 7.6.11's, which `ogo loadp2` is too: what 0.077
+wrote did not boot. From then on the board boots OctoForth at every reset or
+power-up that no loader answers, its banner coming half a second after a
+reset: the REPL is any terminal's at 230400 baud, and the card's files are
+there, the host's not. A loader still loads any other program as before,
+and the next reset with no loader boots OctoForth again.
 
 A name after `flash:` is a file in the flash, in the 15 MB past the
-program, which `scripts/flash.sh` leaves as they are. The flash is
+program, which writing the program leaves as they are. The flash is
 written by clearing bits, which only an erase of a block of 64 KB sets
 again, so a file there is written as it is made, from its start to its
 close, and only read after: `OPEN-FILE` opens it for reading,
@@ -164,8 +200,34 @@ from the host's directory or the card:
 S" app.fth" S" flash:boot.fth" COPY
 ```
 
-The REPL `ogo run` loads runs no startup file: the flash's program is
+The REPL loaded into RAM runs no startup file: the flash's program is
 `boot/`, which calls `Boot`, an embedding function, before the REPL.
+
+## What it has and has not
+
+- **The word sets** of Forth-2012: CORE, CORE EXT but the obsolescent
+  `[COMPILE]`, DOUBLE, EXCEPTION, FILE, STRING, and TOOLS and TOOLS EXT
+  but the wordlists' and the assembler's words: `?`, `DUMP`, `[IF]`,
+  `[ELSE]`, `[THEN]`, `[DEFINED]`, `[UNDEFINED]`, `AHEAD`, `CS-PICK`,
+  `CS-ROLL`, `N>R`, `NR>`, `SYNONYM` and `BYE`; and of FACILITY and its
+  extensions, `KEY?` and `MS`. The test suite's tests of them pass on
+  the board with 0 errors: `scripts/f2012.sh` INCLUDEs them, and
+  `scripts/f2012.sh -sd` runs the FILE tests on the card.
+- **Double numbers** are written with a point, `1.`.
+- **Errors**: the system's are THROWn with the standard's codes, so that
+  `CATCH` catches an undefined word or a stack underflow as it catches a
+  `THROW`. An error not caught empties the stacks and takes back a
+  definition in progress.
+- **The P2**: its pins, smart pins, clocks, locks and LUT as words, and
+  `RUN`, which runs a word on a cog of its own (below).
+- **Room**: 128 KB of code space and 160 KB of data space. The
+  dictionary is 127 primitives, copied into words as P2 instructions, and
+  165 words written in OctoGo, which compiled code calls back into.
+- **Not there**: FLOATING, LOCALS, MEMORY (`ALLOCATE`), SEARCH-ORDER,
+  BLOCK, the rest of FACILITY (`PAGE`, `AT-XY`, `TIME&DATE`, the
+  structures), XCHAR; multitasking within a cog, `RUN` giving a word a cog
+  instead. Nothing protects a word that jumps into garbage: it takes the
+  REPL down with it.
 
 ## The P2 words
 
@@ -251,7 +313,8 @@ checks before it calls it, as it does for its own words. Such a word runs
 on the REPL's cog, so `RUN` refuses a word that uses one. `forth.Serial`
 is the console the REPL has, a cog reading the serial line into a ring;
 `Quit` returns after `BYE`, and `forth.Exit` writes the loader's exit
-sequence, which ends `ogo run` with the status given.
+sequence, which ends `ogo run` with the status given. `forth.Boot`
+interprets a file, as `boot/` does the flash's startup file.
 [example/](example) is such a program, with words for the EDGE's LEDs and
 pins: `ogo run ./example`.
 
@@ -292,13 +355,13 @@ of them being in this repository. Taken as they are:
   as the one its author posted on 2026-04-08. Its timings move by up to a
   tenth with where its words land in memory (its calls took 15,200,129 in
   one build), and its archive of 2025-07-11 ran within that.
-- OctoForth inlines the empty word since M4, so the second row is its loop
+- OctoForth inlines the empty word, so the second row is its loop
   alone, which runs from cog RAM by REP, 2 clocks an iteration, the
   increment of its index; `fib` and `fact`,
   recursive, measure its calls (34 clocks a call and return, 8 more for the
   frame). Its timings, too, move by a few percent with where code lands, a
   taken branch in hub RAM costing 13 to 20 clocks with its target's place:
-  `fact` took 15,360,026 in one build of M4.
+  `fact` took 15,360,026 in one build.
 
 ## Third parties' benchmarks
 
@@ -349,6 +412,35 @@ gave its expected answer, and each Stanford one passed its own check.
 The host's clock ticks every 16 ms, so a Stanford time moves by a tick or
 two from run to run, and by up to 5% with where the code lands.
 
+## How it works
+
+The P2 has good Forths: Peter Jakacki's TAQOZ, in its ROM, and Christof
+Eberspaecher's P2XCForth, whose XBYTE core is up to twice as fast. Every
+Forth for the Propeller 1 or 2 that could be found interprets something --
+wordcodes, tokens, threads or bytecodes. OctoForth writes machine code
+instead, as Mecrisp-Stellaris does on ARM and as the author's own Forth for
+the Intel 8080 did in the 1980s, on paper, on a Tesla JPR-1:
+
+- the primitives are copied into a word as P2 instructions, literals
+  become their immediates, small colon words are inlined, a call in tail
+  position becomes a jump, and a word runs at the address it was written
+  to;
+- the top of the data stack is in a register and both stacks are in the
+  cog's LUT RAM, two to three clocks an access; a call keeps its return
+  address in a register, 34 clocks a call and return;
+- a loop with no call in it runs from cog RAM, where a taken branch costs
+  4 clocks against 13 to 20 in hub RAM, and a DO loop there with no branch
+  in its body is repeated by REP (the loop cache, below);
+- the outer interpreter, the dictionary and the compiler are OctoGo, so a
+  word calls into the OctoGo program it runs in, as `.` and `TYPE` do, and
+  an OctoGo program makes words of its functions; `RUN` sends a word to
+  run on a cog of its own, as `go` sends a function.
+
+[ASSESSMENT.md](ASSESSMENT.md) is the research it began with: the prior
+art, the clocks per operation of TAQOZ, P2XCForth and the design side by
+side, the facts checked on the hardware and in the compiler, the
+milestones and the risks.
+
 ## The loop cache
 
 A taken branch costs 13 to 20 clocks in hub RAM, where compiled code
@@ -394,29 +486,43 @@ loops branch or call, or are `BEGIN` loops over the return stack, so only
 his set-up loops are repeated, and his times move by no more than where
 the longer loops move the code to.
 
-## Why another Forth for the P2
+## The repository
 
-The P2 has good Forths: Peter Jakacki's TAQOZ, in its ROM, and Christof
-Eberspaecher's P2XCForth, whose XBYTE core is up to twice as fast. Every
-Forth for the Propeller 1 or 2 that could be found interprets something --
-wordcodes, tokens, threads or bytecodes. OctoForth is to write machine code
-instead, as Mecrisp-Stellaris does on ARM and as the author's own Forth for
-the Intel 8080 did in the 1980s, on paper, on a Tesla JPR-1:
+Developing OctoForth takes OctoGo and a board, its tests running there.
 
-- the primitives are copied into a word as P2 instructions, literals become
-  immediates, and a word runs at the address it was written to; small colon
-  words are to be inlined too;
-- the data and return stacks live in a cog's LUT RAM, two to three clocks an
-  access, and the top of the stack in a register;
-- the outer interpreter, the dictionary and the compiler are OctoGo, so a
-  word calls into the OctoGo program it runs in, as `.` and `TYPE` already
-  do; `RUN` sends a word to run on a cog of its own, as `go` sends a
-  function.
+- [forth/](forth): the Forth, its engine and its tests: the interpreter
+  and the compiler in OctoGo, and `eng.spin2`, the primitives' templates
+  and the code that enters compiled words, the one Spin2 object.
+- `main.ogo`: the REPL; [boot/](boot) the REPL the flash holds, which
+  runs the startup file; [example/](example) a program that embeds the
+  Forth.
+- [bench/](bench): the benchmarks in the three systems' dialects, and
+  [bench/third/](bench/third) the preludes for the third parties'.
+- [scripts/](scripts): what runs the suite, the benchmarks, the card's
+  check and the flash's write, each saying in its header what it does.
+- [probe/m0](probe/m0): the probe of the research, whose numbers are
+  ASSESSMENT.md's.
 
-ASSESSMENT.md has the prior art, the clocks per operation of TAQOZ, P2XCForth
-and the design side by side, the facts checked on the hardware and in the
-compiler, the milestones and the risks. The bar is P2XCForth's, and the
-comparison is to be made on one board at one clock, the loops shown.
+```sh
+ogo build                 # oforth.binary, and oforth.p2asm, the assembly it was made of
+ogo build --report        # where the hub RAM goes
+ogo test ./forth          # the tests, on the board, writing on its card and in its flash
+scripts/f2012.sh          # the Forth-2012 suite's tests, INCLUDEd by 9P; -sd for the FILE tests on the card
+scripts/cardcheck.sh      # fsck.fat -n of the card's volume, from an image of its blocks in use
+scripts/flash.sh          # boot/ into the board's flash, then a reset and a check that it answers
+scripts/bench.sh          # the benchmarks on OctoForth, TAQOZ and P2XCForth
+scripts/third.sh          # the third parties' benchmarks
+```
+
+The scripts fetch the third parties' code they run, the test suite, TAQOZ
+and the benchmarks, at pinned hashes into `build/`, which is never
+committed, and need `curl`, `sha256sum` and Python 3; `cardcheck.sh`
+needs `fsck.fat` and `mdir`. P2XCForth has no repository: its archive is
+downloaded by hand from its author's forum thread, and `scripts/p2xc.sh`
+builds it with the flexcc of OctoGo's source tree, which it expects
+beside this one, in `../ogo`. The tests make files of their own on the
+card in the slot, in its root, and in the flash, and delete them; with no
+card in the slot the card's test passes with a note.
 
 ## License
 
