@@ -1,0 +1,392 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+import (
+	"p2"
+	"unsafe"
+)
+
+// The board's SPI flash, a W25Q128 of 16 MB, as files: a name after flash:
+// or FLASH: is one of them. Its first megabyte is the program the board
+// boots, which the loader's -FLASH writes from 0 (scripts/flash.sh), erasing
+// no more than it writes, and the rest, 240 blocks of 64 KB, holds the files.
+// A file takes a run of blocks. The first begins with a header of
+// flashHead bytes: flashMagic, the name's length and the name, and at
+// flashSizes flashPlaces places of four bytes for the file's size; the
+// file follows. A place is written when the file is closed or flushed, the
+// last one written saying the size, so that a file none of whose places
+// was written is one the board was reset while it was being made, and its
+// blocks are free. A block is erased when a file is first written into it,
+// a free block holding whatever it held. The flash is written by clearing
+// bits, which only an erase sets again, so a file is written as it is
+// made, from its start to its close, and then read only: OPEN-FILE opens
+// it for reading, RENAME-FILE and RESIZE-FILE refuse it, and DELETE-FILE
+// clears its magic's first byte. Of a file of the flash, the table (file.ogo) keeps its
+// first block in first, its size, how many of its places are written in
+// cidx, the size the last one says in gen (all ones when none does), and,
+// while it is being made, the block after the run it may grow into in
+// clus, the largest run free when it was created: no other file is put
+// there while it is open.
+//
+// The pins are the SD card's too, the flash's clock and select being the
+// card's select and clock. The flash is driven in SPI mode 3, its clock high
+// between bits, so that the card is selected only while the flash's clock
+// is low, when the card's clock, the flash's select, stands: the card never
+// sees its clock move while it is selected. Between commands the pins are
+// left as sd.ogo leaves them, the card's clock low.
+
+const (
+	flSelect = 61
+	flClock  = 60
+	flIn     = 59 // the flash's input
+	flOut    = 58 // and its output
+
+	// The commands.
+	fcRead     = 0x03
+	fcProgram  = 0x02 // a page of 256 bytes at most
+	fcErase    = 0xd8 // a block of 64 KB
+	fcStatus   = 0x05
+	fcEnable   = 0x06 // the next program or erase
+	fcWake     = 0xab
+	fcResetOn  = 0x66
+	fcReset    = 0x99
+	flPatience = 30000 // a hundred us each: an erase takes 2 s at most
+
+	flashMagic  = 0x3153464f // "OFS1"
+	flashFirst  = 16         // the files' first block
+	flashEnd    = 256        // and the block after their last
+	flashHead   = 128
+	flashSizes  = 64
+	flashPlaces = 16
+	flashName   = flashSizes - 5 // the longest name
+)
+
+var (
+	flUp   bool
+	flHead = [5]byte{'O', 'F', 'S', '1'} // and the name's length
+	flZero [1]byte
+)
+
+// flBegin selects the flash and sends it the command c, setting the flash
+// and its pins up first if they were not.
+func flBegin(c byte) {
+	if !flUp {
+		flUp = true
+		p2.PinFloat(flOut)
+		p2.WritePinMode(flOut, p2.DriveHigh15K|p2.DriveLowFloat)
+		p2.PinHigh(flOut)
+		flCommand(fcWake)
+		flCommand(fcResetOn)
+		flCommand(fcReset)
+		p2.WaitUs(50)
+	}
+	flStart()
+	flByte(c)
+}
+
+// flStart selects the flash, deselecting it first, its clock high.
+func flStart() {
+	p2.PinHigh(flClock)
+	p2.PinHigh(flSelect)
+	p2.WaitCycles(20)
+	p2.PinLow(flSelect)
+}
+
+// flCommand gives the flash the command c, which has nothing more.
+func flCommand(c byte) {
+	flStart()
+	flByte(c)
+	flEnd()
+}
+
+// flEnd ends a command.
+func flEnd() {
+	p2.PinHigh(flIn)
+	p2.PinHigh(flSelect)
+	p2.WaitCycles(20)
+	p2.PinLow(flSelect)
+}
+
+// flAt selects the flash and sends it the command c for the address a.
+func flAt(c byte, a uint32) {
+	flBegin(c)
+	flByte(byte(a >> 16))
+	flByte(byte(a >> 8))
+	flByte(byte(a))
+}
+
+// flByte sends out to the flash and answers what it sent back, which it
+// changes when its clock falls.
+func flByte(out byte) byte {
+	var in byte
+	for i := 0; i < 8; i++ {
+		p2.PinLow(flClock)
+		p2.PinWrite(flIn, int(out>>7))
+		out <<= 1
+		p2.PinHigh(flClock)
+		in = in<<1 | byte(p2.PinIn(flOut))
+	}
+	return in
+}
+
+// flRead reads p from the flash at a.
+func flRead(a uint32, p []byte) {
+	flAt(fcRead, a)
+	for i := range p {
+		p[i] = flByte(0xff)
+	}
+	flEnd()
+}
+
+// flLong answers the long at a in the flash.
+func flLong(a uint32) uint32 {
+	flAt(fcRead, a)
+	v := uint32(0)
+	for i := uint32(0); i < 32; i += 8 {
+		v |= uint32(flByte(0xff)) << i
+	}
+	flEnd()
+	return v
+}
+
+// flWrite gives the flash the command c for the address a, an erase, or a
+// program of p within a page, waits until it is done, and answers whether
+// the flash holds p then.
+func flWrite(c byte, a uint32, p []byte) bool {
+	flCommand(fcEnable)
+	flAt(c, a)
+	for _, v := range p {
+		flByte(v)
+	}
+	flEnd()
+	for t := 0; ; t++ {
+		flBegin(fcStatus)
+		busy := flByte(0xff)&1 != 0
+		flEnd()
+		if !busy {
+			break
+		}
+		if t == flPatience {
+			setNineErr("the flash does not answer")
+			return false
+		}
+		p2.WaitUs(100)
+	}
+	flAt(fcRead, a)
+	ok := true
+	for _, v := range p {
+		ok = flByte(0xff) == v && ok
+	}
+	flEnd()
+	if !ok {
+		setNineErr("the flash was not written")
+	}
+	return ok
+}
+
+// What flashScan found: the block the file it was asked for begins at, 0
+// if none does, its size and how many of its places are written; and the
+// largest run of free blocks, flashRun long from flashFree.
+var flashAt, flashSize, flashPlaced, flashFree, flashRun uint32
+
+// flashScan walks the files of the flash for the file name.
+func flashScan(name []byte) {
+	flashAt, flashRun = 0, 0
+	run, start := uint32(0), uint32(0)
+	for b := uint32(flashFirst); b < flashEnd; {
+		a := b << 16
+		size, placed, n := uint32(0), uint32(0), uint32(0)
+		if flLong(a) == flashMagic {
+			for placed < flashPlaces {
+				v := flLong(a + flashSizes + 4*placed)
+				if v == 0xffffffff {
+					break
+				}
+				size = v
+				placed++
+			}
+			if placed > 0 {
+				n = (flashHead + size + 0xffff) >> 16
+			}
+		}
+		if u := flashUser(-1, b); u >= 0 && files[u].clus != 0 {
+			n = files[u].clus - b
+		}
+		if n == 0 {
+			if run == 0 {
+				start = b
+			}
+			run++
+			if run > flashRun {
+				flashFree, flashRun = start, run
+			}
+			b++
+			continue
+		}
+		run = 0
+		if flashIs(a, name) {
+			flashAt, flashSize, flashPlaced = b, size, placed
+		}
+		b += n
+	}
+}
+
+// flashIs answers whether the file whose header is at a is called name.
+func flashIs(a uint32, name []byte) bool {
+	flAt(fcRead, a+4)
+	same := int(flByte(0xff)) == len(name)
+	for i := 0; same && i < len(name); i++ {
+		same = upper(flByte(0xff)) == upper(name[i])
+	}
+	flEnd()
+	return same
+}
+
+// flashUser answers a file of the table other than f open in the flash at
+// block b, one being made if there is one, or -1 if there is none.
+func flashUser(f int, b uint32) int {
+	u := -1
+	for k := range files {
+		if fl := &files[k]; k != f && fl.open && fl.on == onFlash && fl.first == b && (u < 0 || fl.clus != 0) {
+			u = k
+		}
+	}
+	return u
+}
+
+// flashOpen opens name in the flash as f, for reading, or, when create is
+// set, makes it, deleting a file of the name first.
+func flashOpen(f int, name []byte, mode uint32, create bool) bool {
+	if len(name) == 0 || len(name) > flashName {
+		setNineErr("a flash: name is 1 to 59 bytes")
+		return false
+	}
+	flashScan(name)
+	first, size, placed, gen, clus := flashAt, flashSize, flashPlaced, flashSize, uint32(0)
+	if !create {
+		u := flashUser(f, flashAt)
+		switch {
+		case flashAt == 0:
+			setNineErr("no such file")
+			return false
+		case u >= 0 && files[u].clus != 0:
+			setNineErr("the file is open")
+			return false
+		case mode != famRO:
+			setNineErr("a flash: file is written as it is made only")
+			return false
+		}
+	} else {
+		if flashAt != 0 {
+			if flashUser(f, flashAt) >= 0 {
+				setNineErr("the file is open")
+				return false
+			}
+			if !flashDrop(flashAt) {
+				return false
+			}
+			flashScan(name)
+		}
+		if flashRun == 0 {
+			setNineErr("the flash is full")
+			return false
+		}
+		a := flashFree << 16
+		flHead[4] = byte(len(name))
+		if !flWrite(fcErase, a, nil) || !flWrite(fcProgram, a, flHead[:]) || !flWrite(fcProgram, a+5, name) {
+			return false
+		}
+		first, size, placed, gen, clus = flashFree, 0, 0, 0xffffffff, flashFree+flashRun
+	}
+	fl := &files[f]
+	fl.first, fl.size, fl.cidx, fl.gen, fl.clus = first, size, placed, gen, clus
+	return true
+}
+
+// flashRead reads into p what f has from off on, and answers how much.
+func flashRead(f int, off uint32, p []byte) int {
+	fl := &files[f]
+	if off >= fl.size {
+		return 0
+	}
+	n := fl.size - off
+	if n > uint32(len(p)) {
+		n = uint32(len(p))
+	}
+	flRead(fl.first<<16+flashHead+off, p[:n])
+	return int(n)
+}
+
+// flashWrite writes p, or what of it goes in a page, to f at off, which is
+// where it ends, and answers how much, or -1.
+func flashWrite(f int, off uint32, p []byte) int {
+	fl := &files[f]
+	a := fl.first<<16 + flashHead + off
+	switch {
+	case off != fl.size:
+		setNineErr("a flash: file is written at its end only")
+		return -1
+	case a>>16 >= fl.clus:
+		setNineErr("the flash is full")
+		return -1
+	case a&0xffff == 0 && !flWrite(fcErase, a, nil):
+		return -1
+	}
+	n := 256 - int(a&255)
+	if n > len(p) {
+		n = len(p)
+	}
+	if !flWrite(fcProgram, a, p[:n]) {
+		return -1
+	}
+	fl.size += uint32(n)
+	return n
+}
+
+// flashSync writes f's size in its next place, if it is not what the last
+// one says.
+func flashSync(f int) bool {
+	fl := &files[f]
+	if fl.gen == fl.size {
+		return true
+	}
+	if fl.cidx == flashPlaces {
+		setNineErr("the file was flushed too often")
+		return false
+	}
+	if !flWrite(fcProgram, fl.first<<16+flashSizes+4*fl.cidx, unsafe.Slice((*byte)(unsafe.Pointer(&fl.size)), 4)) {
+		return false
+	}
+	fl.cidx++
+	fl.gen = fl.size
+	return true
+}
+
+// flashStatus answers the 9P mode of the file name in the flash, which is
+// read only.
+func flashStatus(name []byte) (uint32, bool) {
+	flashScan(name)
+	if flashAt == 0 {
+		setNineErr("no such file")
+		return 0, false
+	}
+	return 0x124, true // 0444
+}
+
+// flashDelete removes the file name from the flash.
+func flashDelete(name []byte) bool {
+	flashScan(name)
+	switch {
+	case flashAt == 0:
+		setNineErr("no such file")
+	case flashUser(-1, flashAt) >= 0:
+		setNineErr("the file is open")
+	default:
+		return flashDrop(flashAt)
+	}
+	return false
+}
+
+// flashDrop deletes the file at block b, clearing its magic's first byte.
+func flashDrop(b uint32) bool { return flWrite(fcProgram, b<<16, flZero[:]) }

@@ -29,8 +29,9 @@ and LUT are words named after OctoGo's `p2` package's functions, and
 `RUN` runs a word on a cog of its own. An OctoGo program embeds the
 Forth by copying a directory, and makes functions of its own words.
 `INCLUDE` and the FILE words read and write the host's files, over the
-serial line, and the SD card's, the board boots OctoForth from its flash
-with no host (`scripts/flash.sh`), `CATCH` and `THROW` catch errors, the
+serial line, the SD card's and the board's flash's, the board boots
+OctoForth from its flash with no host (`scripts/flash.sh`), interpreting
+a startup file there first, `CATCH` and `THROW` catch errors, the
 system's with ANS's codes, and the DOUBLE, STRING and TOOLS word sets are
 there, double numbers written with a point, `1.`, and TOOLS EXT but its
 wordlists and assembler: `?`, `DUMP`, `[IF]`, `[ELSE]`, `[THEN]`,
@@ -138,6 +139,33 @@ banner coming half a second after a reset: the REPL is any terminal's at
 230400 baud, and the card's files are there, the host's not. A loader
 still loads any other program as before, and the next reset with no
 loader boots OctoForth again.
+
+A name after `flash:` is a file in the flash, in the 15 MB past the
+program, which `scripts/flash.sh` leaves as they are. The flash is
+written by clearing bits, which only an erase of a block of 64 KB sets
+again, so a file there is written as it is made, from its start to its
+close, and only read after: `OPEN-FILE` opens it for reading,
+`CREATE-FILE` makes it anew, `DELETE-FILE` deletes it, and `RENAME-FILE`
+and `RESIZE-FILE` refuse it. A file takes 64 KB at least, so the flash
+holds 240 of them; one the board was reset while writing is not there.
+The OctoForth the board boots first interprets `flash:boot.fth`, if
+there is one, unless a key comes within half a second, which it says:
+
+```
+OctoForth, a native-code Forth for the P2
+flash:boot.fth: a key within half a second skips it
+```
+
+So a program starts by itself at power-up, and a startup file that goes
+wrong is skipped by a key pressed at the reset. COPY above writes one
+from the host's directory or the card:
+
+```
+S" app.fth" S" flash:boot.fth" COPY
+```
+
+The REPL `ogo run` loads runs no startup file: the flash's program is
+`boot/`, which calls `Boot`, an embedding function, before the REPL.
 
 ## The P2 words
 

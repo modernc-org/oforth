@@ -9,8 +9,9 @@ import (
 // The embedding: a program gives the Forth its code and data spaces (Init)
 // and its console (Serial, or Console, Key and Avail of its own), makes
 // functions of its own words (Define), and runs the REPL (Quit) or Forth
-// source (Evaluate). This directory is the whole Forth, importing nothing
-// but p2 and unsafe, so a program has it by copying the directory.
+// source (Evaluate, or a file by Boot). This directory is the whole Forth,
+// importing nothing but p2 and unsafe, so a program has it by copying the
+// directory.
 
 const maxExported = 64
 
@@ -98,6 +99,43 @@ func serialKey() int {
 }
 
 func serialAvail() bool { return rtail != rhead }
+
+// Boot interprets the file name as INCLUDED does, if there is one, and if
+// no key comes within half a second, which it says first; with no console
+// to bring one it waits for none. The key is taken, and what came with it.
+// boot/main.ogo, the program the board's flash holds, calls it with
+// flash:boot.fth, the board's startup file.
+func Boot(name string) {
+	ntib = 0
+	tibAdd("S\" ")
+	tibAdd(name)
+	if _, ok := fileStatus(tib[3:ntib]); !ok {
+		return
+	}
+	if Avail != nil {
+		typeStr(name)
+		typeStr(": a key within half a second skips it\n")
+		for t := 0; t < 50 && !Avail(); t++ {
+			p2.WaitMs(10)
+		}
+		if Avail() {
+			for Avail() {
+				Key()
+			}
+			typeStr("skipped\n")
+			return
+		}
+	}
+	tibAdd("\" INCLUDED")
+	line()
+}
+
+func tibAdd(s string) {
+	for i := 0; i < len(s) && ntib < len(tib); i++ {
+		tib[ntib] = s[i]
+		ntib++
+	}
+}
 
 // Exit writes the loader's exit sequence, 0xFF 0x00 and status, which ends
 // the terminal of ogo run and of ogo loadp2 -t, ogo run exiting with that

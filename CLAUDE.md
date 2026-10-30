@@ -27,7 +27,7 @@ REPL compiles colon definitions to native code; committed 426c8c3), and M2
 after it: DOES>, POSTPONE, the pictured numbers, EVALUATE and the parsing
 words, CASE, VALUE, DEFER, MARKER, SEE, and the CORE and CORE EXT tests of
 the Forth-2012 test suite passing on the board with 0 errors
-(`scripts/f2012.sh`); `ogo test ./forth` passes (twenty-nine tests by the TOOLS words); and the
+(`scripts/f2012.sh`); `ogo test ./forth` passes (thirty tests by the flash's files); and the
 benchmarks ran on three Forths on one board (`scripts/bench.sh`, README.md,
 "Three Forths on one board"): OctoForth 2.1 to 3.4 times the speed of
 P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
@@ -94,8 +94,13 @@ measured again with it, the README, the release): TOOLS and TOOLS EXT but
 the wordlists' and the assembler's, `KEY?` and `MS`, the suite's
 `toolstest.fth` passing; then booting with no host, the same night:
 the board's flash holds OctoForth (`scripts/flash.sh`, the user's choice
-of 2026-10-30, below), and the benchmark scripts load TAQOZ into hub RAM.
-Not yet: an autostart, a host twin. The repository is on
+of 2026-10-30, below), and the benchmark scripts load TAQOZ into hub RAM;
+then files in the flash, a name after `flash:`, and a startup file,
+`flash:boot.fth`, which `boot/`, the program the flash holds, interprets
+first unless a key comes within half a second (the user's yes of
+2026-10-30 to a source file rather than a saved dictionary, TAQOZ's
+BACKUP, which a new build would make worthless). Not yet: a host twin.
+The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
 binaries.
@@ -128,6 +133,11 @@ The files:
 - `example/`: M3's demo, a program embedding the Forth with three words
   of its own, LEDS, BLINK and PINS, and a Forth word, COUNT-UP, defined
   at start by `Evaluate` (`ogo run ./example`).
+- `boot/`: the program the board's flash holds, `main.ogo`'s REPL with
+  `Boot("flash:boot.fth")` before `Quit`, so that `ogo run` and the
+  scripts, which load `main.ogo`'s, run no startup file the flash may
+  have: the benchmarks' code would move with it. `scripts/flash.sh`
+  builds it.
 - `bench/`: the five benchmarks in three dialects, `oforth.fth`,
   `taqoz.fth`, `p2xc.fth`, the same algorithms; `scripts/bench.sh` runs
   them. Nothing of P2XCForth's author is in the repository (the user's
@@ -265,7 +275,11 @@ version` and the clock they were taken at, never from the estimates.
   soon as it has handed the image over, which resets the board in the
   middle of the write (the first try left 15 KB and a board that booted
   nothing). Its helper sits at hub $7C000 while it writes, so the image
-  must end below 507,904 bytes; `oforth.binary` was 498,952. Before,
+  must end below 507,904 bytes; `boot/`'s was 505,660 with the flash's
+  files and `Boot`, 2,244 bytes short, `main.ogo`'s 504,764. The loader
+  erases no more than it writes (blocks 0 to 7, the survey of 2026-10-30
+  showed, the rest erased), so the flash's files, from 1 MB on, stay;
+  it held no files after the tests of 2026-10-30. Before,
   the flash held TAQOZ Reloaded V2.14.0 (the image of 2024-02-19 from
   SourceForge's TAQOZ/binaries), written there on 2026-10-28 at the
   user's word by loading `_BOOT_P2.BIX` and typing `BACKUP FLASH`, and
@@ -394,9 +408,10 @@ All measured or read in this session and recorded with their sources in
   lines by refilling and the console's by `skipping`, which `line` goes
   on with; CS-PICK and CS-ROLL set `cacheOff`, a picked loop's entry
   being able to end the loop cache's loop twice; BYE makes `Quit`
-  return); `embed.ogo` the embedding, `Define`, `Push`, `Pop` and
-  `Serial`; `sd.ogo` the SD card's blocks and `fat.ogo` its FAT32 volume,
-  under the file layer; `eng.ogo` and `eng.spin2` the engine, above.
+  return); `embed.ogo` the embedding, `Define`, `Push`, `Pop`,
+  `Serial` and `Boot`; `sd.ogo` the SD card's blocks and `fat.ogo` its
+  FAT32 volume, and `flash.ogo` the flash's files, under the file layer;
+  `eng.ogo` and `eng.spin2` the engine, above.
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
   written and not yet sent (`dirty`), `off` where in the file it starts
@@ -453,6 +468,29 @@ All measured or read in this session and recorded with their sources in
   directory walk is its own and not fat.ogo's, which it checks; the walk
   of subdirectories has not run, the card having none and the FILE words
   making none.
+- **The flash's files** (`flash.ogo`): a name after `flash:` is one of
+  the files in blocks 16 to 255 of the flash, 64 KB each, the first
+  megabyte being the program the board boots. A file is a run of
+  blocks, its first beginning with a header of 128 bytes: "OFS1", the
+  name's length and the name (59 bytes at most, matched regardless of
+  case), and at 64 sixteen places for its size, of which the last
+  written says it; one with none written is free, as is a block with no
+  magic, and `flashScan` walks the heads, skipping a file's blocks by
+  its size. A block is erased when a file is first written into it, so
+  a file is written as it is made only, at its end (`flashWrite`, a
+  page at most), and then opened for reading only; RENAME-FILE and
+  RESIZE-FILE refuse it, DELETE-FILE clears its magic's first byte, and
+  every program of the flash is read back (`flWrite`). Of the table,
+  `first` is its block, `cidx` how many places are written, `gen` the
+  size the last says (all ones for none), and `clus` the block after the
+  largest free run it was made in, which it keeps while it is open, no
+  other file being put there. FLUSH-FILE and CLOSE-FILE write a place if
+  the size changed (`flashSync`), sixteen at most. The flash is driven
+  in SPI mode 3, its clock high between bits, so that the card, whose
+  select is the flash's clock and whose clock is the flash's select,
+  never sees its clock move while it is selected; between commands the
+  pins are as `sd.ogo` leaves them. `TestFlash` writes 70,000 bytes
+  across a block's end, and copies a file of the flash to the card.
 - **The input source** is `src`, a slice over `tib` or over what EVALUATE
   was given, `srcAddr` where it is, and `>IN` a data-space cell
   (`cellToIn`); `parse`, `parseName` and `skip` read it. EVALUATE saves and
@@ -540,7 +578,11 @@ All measured or read in this session and recorded with their sources in
   `Quit` returns after BYE, and `Exit(status)` writes the loader's exit
   sequence, $FF $00 and the status, which ends `ogo run`'s terminal (not
   `ogo loadp2 -t`'s, which does not look for it); the two mains call it
-  after `Quit`, an OctoGo main returning sending nothing.
+  after `Quit`, an OctoGo main returning sending nothing. `Boot(name)`
+  interprets the file name by a line `S" name" INCLUDED`, if
+  FILE-STATUS finds it, unless a key comes within half a second, which
+  it says first; the key is taken and what came with it, and with no
+  `Avail` it waits for none. `boot/` calls it; `TestFlash` both ways.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
@@ -596,7 +638,7 @@ flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
 scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS tests on the board, INCLUDEd by 9P, a minute; errors: 0
 scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
 scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
-scripts/flash.sh                # OctoForth into the board's flash, booted at every reset with no loader; checked by scripts/boot.py
+scripts/flash.sh                # boot/ into the board's flash, booted at every reset with no loader; checked by scripts/boot.py
 flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset, the flash's OctoForth answering
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary

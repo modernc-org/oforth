@@ -1114,6 +1114,67 @@ func TestCard(t *testing.T) {
 	}
 }
 
+// TestFlash writes files in the board's flash, past the program it boots,
+// and deletes them.
+func TestFlash(t *testing.T) {
+	check(t, "S\" flash:oftest1.txt\" DELETE-FILE DROP S\" flash:oftest2.txt\" DELETE-FILE DROP S\" flash:OctoForth Test.text\" DELETE-FILE DROP", "")
+	check(t, "S\" flash:oftest1.txt\" W/O CREATE-FILE . VALUE fw", "0 ")
+	check(t, "S\" hello\" fw WRITE-LINE . S\" world\" fw WRITE-FILE . fw FILE-POSITION . . . fw CLOSE-FILE .", "0 0 0 0 11 0 ")
+	check(t, "S\" FLASH:OFTEST1.TXT\" R/O OPEN-FILE . VALUE fr PAD 80 fr READ-LINE . . PAD SWAP TYPE", "0 0 -1 hello")
+	check(t, "fr FILE-SIZE . . . S\" x\" fr WRITE-FILE . fr CLOSE-FILE .", "0 0 11 -37 0 ")
+	// Written as it is made only, at its end: neither opened to be written,
+	// resized nor renamed.
+	check(t, "S\" flash:oftest1.txt\" R/W OPEN-FILE NIP 0= . S\" flash:oftest1.txt\" S\" flash:oftest2.txt\" RENAME-FILE 0= .", "0 0 ")
+	check(t, "S\" flash:oftest2.txt\" R/W CREATE-FILE . VALUE fb S\" abc\" fb WRITE-FILE . fb FLUSH-FILE . 0 0 fb REPOSITION-FILE . PAD 10 fb READ-FILE . . PAD 3 TYPE", "0 0 0 0 0 3 abc")
+	check(t, "2 0 fb RESIZE-FILE 0= . 0 0 fb REPOSITION-FILE . S\" x\" fb WRITE-FILE . fb CLOSE-FILE 0= .", "0 0 0 0 ")
+	check(t, "S\" flash:oftest2.txt\" R/O OPEN-FILE . VALUE fc fc FILE-SIZE . . . fc CLOSE-FILE .", "0 0 0 3 0 ")
+	// CREATE-FILE replaces a file that is there.
+	check(t, "S\" flash:oftest2.txt\" W/O CREATE-FILE . VALUE fd S\" de\" fd WRITE-FILE . fd CLOSE-FILE . S\" flash:oftest2.txt\" R/O OPEN-FILE . VALUE fe fe FILE-SIZE . . . fe CLOSE-FILE .", "0 0 0 0 0 0 2 0 ")
+	// More than a block of 64 KB, read across the blocks' ends.
+	check(t, "CREATE fbig 1000 ALLOT S\" flash:OctoForth Test.text\" W/O CREATE-FILE . VALUE ff : fwr 70 0 DO fbig 1000 I 48 + FILL fbig 1000 ff WRITE-FILE DROP LOOP ; fwr ff CLOSE-FILE .", "0 0 ")
+	check(t, "S\" flash:octoforth test.TEXT\" R/O OPEN-FILE . VALUE fg 65400 0 fg REPOSITION-FILE . fbig 16 fg READ-FILE . . fbig 16 TYPE", "0 0 0 16 qqqqqqqqqqqqqqqq")
+	check(t, "65990 0 fg REPOSITION-FILE . fbig 20 fg READ-FILE . . fbig 20 TYPE fg FILE-SIZE . . . fg CLOSE-FILE .", "0 0 20 qqqqqqqqqqrrrrrrrrrr0 0 70000 0 ")
+	// An open file is neither deleted nor made again.
+	check(t, "S\" flash:oftest2.txt\" R/O OPEN-FILE . VALUE fh S\" flash:oftest2.txt\" DELETE-FILE 0= . S\" flash:oftest2.txt\" W/O CREATE-FILE NIP 0= . fh CLOSE-FILE .", "0 0 0 0 ")
+	check(t, "S\" flash:\" R/O OPEN-FILE NIP 0= . S\" flash:nosuch\" R/O OPEN-FILE . .", "0 -38 0 ")
+	// A file whose size was never written, as one being made when the board
+	// was reset, is not there.
+	if f := fileOpen([]byte("flash:oftest1.txt"), famWO, true); f < 0 || !fileWrite(f, []byte("lost")) || !fileFlush(f) {
+		println("flash:oftest1.txt not made")
+		t.Fail()
+	} else {
+		files[f].open = false
+	}
+	check(t, "S\" flash:oftest1.txt\" FILE-STATUS NIP 0= .", "0 ")
+	// Boot interprets a file, unless a key comes.
+	check(t, "S\" flash:oftest1.txt\" W/O CREATE-FILE . VALUE fi S\" : tboot 42 ;\" fi WRITE-LINE . fi CLOSE-FILE .", "0 0 0 ")
+	ResetOutput()
+	Boot("flash:oftest1.txt")
+	check(t, "tboot .", "42 ")
+	Key, Avail, nkeys, keys = testKey, keyLeft, 0, " 1 tboot ."
+	ResetOutput()
+	Boot("flash:oftest1.txt")
+	Key, Avail = nil, nil
+	if !same(Output(), "flash:oftest1.txt: a key within half a second skips it\nskipped\n") || nkeys != len(keys) {
+		println("Boot was not skipped")
+		t.Fail()
+	}
+	// The card, on the same pins, between the flash's commands.
+	if sdOpen() {
+		check(t, "S\" flash:oftest2.txt\" R/O OPEN-FILE . VALUE fj S\" sd:oftest3.txt\" W/O CREATE-FILE . VALUE fk PAD 10 fj READ-FILE . PAD SWAP fk WRITE-FILE . fj CLOSE-FILE . fk CLOSE-FILE .", "0 0 0 0 0 0 ")
+		check(t, "S\" sd:oftest3.txt\" R/O OPEN-FILE . VALUE fl PAD 10 fl READ-FILE . PAD SWAP TYPE fl CLOSE-FILE . S\" sd:oftest3.txt\" DELETE-FILE .", "0 0 de0 0 ")
+	}
+	check(t, "S\" flash:oftest1.txt\" DELETE-FILE . S\" flash:oftest2.txt\" DELETE-FILE . S\" flash:OctoForth Test.text\" DELETE-FILE . S\" flash:oftest2.txt\" DELETE-FILE 0= .", "0 0 0 0 ")
+	for f := range files {
+		if files[f].open {
+			printf("file %d left open\n", f)
+			t.Fail()
+		}
+	}
+}
+
+func keyLeft() bool { return nkeys < len(keys) }
+
 func TestTools(t *testing.T) {
 	check(t, "VARIABLE tq 42 tq ! tq ?", "42 ")
 	checkHas(t, "CREATE td 3 C, 65 C, 0 C, td 3 DUMP", "  03 41 00 ")

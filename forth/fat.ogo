@@ -899,7 +899,7 @@ func cardOpenAt(f int, p dirPos) (bool, bool) {
 	open, writing := false, false
 	for k := range files {
 		fl := &files[k]
-		if k != f && fl.open && fl.card && fl.gen == volGen && fl.ent == p {
+		if k != f && fl.open && fl.on == onCard && fl.gen == volGen && fl.ent == p {
 			open = true
 			writing = writing || fl.mode != famRO
 		}
@@ -955,7 +955,7 @@ func cardOpen(f int, path []byte, mode uint32, create bool) bool {
 		first, size = 0, 0
 	}
 	fl := &files[f]
-	fl.card, fl.gen, fl.ent = true, volGen, foundAt
+	fl.on, fl.gen, fl.ent = onCard, volGen, foundAt
 	fl.first, fl.size, fl.clus, fl.cidx, fl.synced = first, size, 0, 0, !empty
 	return !empty || cardEntry(f) && clusFree(entryClus()) && volSync()
 }

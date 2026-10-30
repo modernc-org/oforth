@@ -1,0 +1,27 @@
+// Copyright 2026 The oforth Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Command boot is OctoForth as the board's flash holds it
+// (scripts/flash.sh): the REPL of main.ogo, which first interprets
+// flash:boot.fth, the board's startup file, if there is one and no key
+// comes within half a second.
+
+import (
+	"modernc.org/oforth/forth"
+)
+
+// The Forth's code and data spaces, as main.ogo's.
+var (
+	code [32768]uint32
+	data [40960]uint32
+)
+
+func main() {
+	forth.Serial()
+	forth.Init(code[:], data[:])
+	forth.Banner()
+	forth.Boot("flash:boot.fth")
+	forth.Quit() // until BYE
+	forth.Exit(0)
+}
