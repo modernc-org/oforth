@@ -142,8 +142,13 @@ day in a thread of its own on the Parallax forums,
 https://forums.parallax.com/discussion/178225/octoforth-a-native-code-forth-for-the-p2-written-in-octogo,
 and by a short post linking it in OctoGo's thread,
 https://forums.parallax.com/discussion/178159/, both drafted here
-(`build/forum/`, out of git) and posted by the user. `.github/FUNDING.yml`
-is ogo's.
+(`build/forum/`, out of git) and posted by the user. Christof Eb.,
+P2XCForth's author, replied in the thread the same day: why Go, the empty
+word's row, code size and free RAM beside the clocks, and PAUSE with the
+stacks in the LUT. The answer, drafted here and posted by the user that
+day, came after the README had what he asked for: the call row measured
+with a word that is not inlined, and "What the programs take"
+(`scripts/size.sh`). `.github/FUNDING.yml` is ogo's.
 
 The files:
 
