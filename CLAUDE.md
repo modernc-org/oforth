@@ -131,7 +131,13 @@ the user that day; whatever is pushed is seen at once. v0.1.0 is
 released on the mirror, https://github.com/modernc-org/oforth/releases/tag/v0.1.0,
 marked a pre-release, with `oforth-v0.1.0.zip` (sha256 2bf155e0...) and
 `SHA256SUMS`, both checked byte for byte against the local build the
-same day, and the notes drafted here. `.github/FUNDING.yml` is ogo's.
+same day, and the notes drafted here. It is announced since the same
+day in a thread of its own on the Parallax forums,
+https://forums.parallax.com/discussion/178225/octoforth-a-native-code-forth-for-the-p2-written-in-octogo,
+and by a short post linking it in OctoGo's thread,
+https://forums.parallax.com/discussion/178159/, both drafted here
+(`build/forum/`, out of git) and posted by the user. `.github/FUNDING.yml`
+is ogo's.
 
 The files:
 
