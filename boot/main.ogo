@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Command boot is OctoForth as the board's flash holds it
-// (scripts/flash.sh): the REPL of main.ogo, which first interprets
-// flash:boot.fth, the board's startup file, if there is one and no key
+// Command boot is OctoForth as the board boots it with no loader, from
+// its flash (scripts/flash.sh) or from an SD card as _BOOT_P2.BIX: the
+// REPL of main.ogo, which first interprets the startup file, sd:boot.fth
+// if the card in the slot has one and flash:boot.fth if not, unless a key
 // comes within half a second.
 
 import (
@@ -21,7 +22,9 @@ func main() {
 	forth.Serial()
 	forth.Init(code[:], data[:])
 	forth.Banner()
-	forth.Boot("flash:boot.fth")
+	if !forth.Boot("sd:boot.fth") {
+		forth.Boot("flash:boot.fth")
+	}
 	forth.Quit() // until BYE
 	forth.Exit(0)
 }

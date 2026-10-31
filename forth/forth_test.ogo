@@ -1149,13 +1149,16 @@ func TestFlash(t *testing.T) {
 	// Boot interprets a file, unless a key comes.
 	check(t, "S\" flash:oftest1.txt\" W/O CREATE-FILE . VALUE fi S\" : tboot 42 ;\" fi WRITE-LINE . fi CLOSE-FILE .", "0 0 0 ")
 	ResetOutput()
-	Boot("flash:oftest1.txt")
+	if !Boot("flash:oftest1.txt") || Boot("flash:nosuch") {
+		println("Boot answered wrong")
+		t.Fail()
+	}
 	check(t, "tboot .", "42 ")
 	Key, Avail, nkeys, keys = testKey, keyLeft, 0, " 1 tboot ."
 	ResetOutput()
-	Boot("flash:oftest1.txt")
+	booted := Boot("flash:oftest1.txt")
 	Key, Avail = nil, nil
-	if !same(Output(), "flash:oftest1.txt: a key within half a second skips it\nskipped\n") || nkeys != len(keys) {
+	if !same(Output(), "flash:oftest1.txt: a key within half a second skips it\nskipped\n") || nkeys != len(keys) || !booted {
 		println("Boot was not skipped")
 		t.Fail()
 	}

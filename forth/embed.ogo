@@ -103,14 +103,16 @@ func serialAvail() bool { return rtail != rhead }
 // Boot interprets the file name as INCLUDED does, if there is one, and if
 // no key comes within half a second, which it says first; with no console
 // to bring one it waits for none. The key is taken, and what came with it.
-// boot/main.ogo, the program the board's flash holds, calls it with
-// flash:boot.fth, the board's startup file.
-func Boot(name string) {
+// It answers whether the file was there, interpreted or skipped.
+// boot/main.ogo, the program the board boots, calls it with sd:boot.fth,
+// the card's startup file, and with flash:boot.fth, the flash's, if the
+// card has none.
+func Boot(name string) bool {
 	ntib = 0
 	tibAdd("S\" ")
 	tibAdd(name)
 	if _, ok := fileStatus(tib[3:ntib]); !ok {
-		return
+		return false
 	}
 	if Avail != nil {
 		typeStr(name)
@@ -123,11 +125,12 @@ func Boot(name string) {
 				Key()
 			}
 			typeStr("skipped\n")
-			return
+			return true
 		}
 	}
 	tibAdd("\" INCLUDED")
 	line()
+	return true
 }
 
 func tibAdd(s string) {

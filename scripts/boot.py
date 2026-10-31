@@ -4,12 +4,14 @@
 # license that can be found in the LICENSE file.
 
 """boot.py resets a P2 board by its DTR line, with no loader to answer, so
-that the board boots what its flash holds, and prints what it says at
-230400 baud, OctoForth's, until it is quiet for a second; then it sends
-each LINE given, a CR after it, and prints the answer so. It is how
-scripts/flash.sh checks the flash's OctoForth.
+that the board boots what its flash holds, or an SD card's _BOOT_P2.BIX,
+and prints what it says at 230400 baud, OctoForth's, until it is quiet for
+a second; then it sends each LINE given, a CR after it, and prints the
+answer so. It is how scripts/flash.sh checks the flash's OctoForth. -w is
+how many seconds the first byte may take, 5 by default; a boot from the
+card wants 15, the ROM reading the card at about 65 KB/s.
 
-Usage: scripts/boot.py PORT [LINE...]
+Usage: scripts/boot.py [-w SECS] PORT [LINE...]
 
 Run it under the shared board lock, as every use of the port is:
 
@@ -42,9 +44,12 @@ def quiet(fd, secs, first):
 
 
 def main():
-    if len(sys.argv) < 2:
+    args, first = sys.argv[1:], 5.0
+    if args[:1] == ["-w"] and len(args) > 1:
+        first, args = float(args[1]), args[2:]
+    if not args:
         sys.exit(__doc__)
-    port = sys.argv[1]
+    port = args[0]
     fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     a = termios.tcgetattr(fd)
     a[0] = a[1] = a[3] = 0
@@ -60,9 +65,9 @@ def main():
     fcntl.ioctl(fd, termios.TIOCMBIS, dtr)
     termios.tcflush(fd, termios.TCIFLUSH)
     out = sys.stdout.buffer
-    out.write(quiet(fd, 1.0, 5.0))
+    out.write(quiet(fd, 1.0, first))
     out.flush()
-    for line in sys.argv[2:]:
+    for line in args[1:]:
         os.write(fd, line.encode() + b"\r")
         out.write(quiet(fd, 0.5, 5.0))
         out.flush()

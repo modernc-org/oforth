@@ -47,9 +47,12 @@ as it ships. `../p2-11` and `../obeam` have a note of it,
 for the file layer, the user's 4 GB one, used before for obeam: SDHC,
 7,680,000 blocks, one FAT32 partition from block 8192 made by mkfs.fat,
 8 blocks a cluster, and in its root `_BOOT_P2.BIX`, 504,844 bytes in one
-piece from cluster 3, an obeam program `obeam -sd` wrote, which stays
-as it is (the user's word: OctoForth writes in the card's root and
-leaves that file alone). Every block in use was copied to the host
+piece from cluster 3, an obeam program `obeam -sd` wrote, which stayed
+as it was (the user's word: OctoForth writes in the card's root and
+leaves that file alone) until 2026-10-31, when the user had it replaced
+for good by OctoForth's `boot/`, 505,732 bytes in one piece from
+cluster 199, obeam's copied first into `build/sdboot` (sha256
+2dd187e3...), by OctoForth itself. Every block in use was copied to the host
 before the first write, in a scratch directory, and a FAT32 image built
 of it, which `fsck.fat -n` passed; the card is judged so after every
 change of the FAT code, there being no tool on the board for it:
@@ -101,8 +104,16 @@ first unless a key comes within half a second (the user's yes of
 2026-10-30 to a source file rather than a saved dictionary, TAQOZ's
 BACKUP, which a new build would make worthless); then the README
 rewritten for going public, with an installation, and a CHANGELOG, the
-same day, the numbers to be measured again with OctoGo v1.0.0. Not yet:
-a host twin.
+same day, the numbers to be measured again with OctoGo v1.0.0; then,
+2026-10-31, with the user at the board, the SD card's part of going
+public: `sd.ogo` carries p2-11's copyright line beside this project's,
+and the board boots `boot/` from the card too, as its `_BOOT_P2.BIX`,
+with the FLASH switch off, its startup file `sd:boot.fth`, or
+`flash:boot.fth` if the card has none (the user's choices of that day,
+below). OctoGo v1.0.0 being weeks away, the user is considering
+v0.1.0 as a preview built with v1.0.0-rc.3, whose binaries ogo's master
+of 2026-10-31 (e832316) builds byte for byte the same. Not yet: a host
+twin.
 The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
@@ -143,8 +154,9 @@ The files:
 - `example/`: M3's demo, a program embedding the Forth with three words
   of its own, LEDS, BLINK and PINS, and a Forth word, COUNT-UP, defined
   at start by `Evaluate` (`ogo run ./example`).
-- `boot/`: the program the board's flash holds, `main.ogo`'s REPL with
-  `Boot("flash:boot.fth")` before `Quit`, so that `ogo run` and the
+- `boot/`: the program the board boots from its flash or an SD card,
+  `main.ogo`'s REPL with `Boot("sd:boot.fth")`, and
+  `Boot("flash:boot.fth")` if that finds no file, before `Quit`, so that `ogo run` and the
   scripts, which load `main.ogo`'s, run no startup file the flash may
   have: the benchmarks' code would move with it. `scripts/flash.sh`
   builds it.
@@ -242,14 +254,22 @@ section 9 has the reasons:
   in its root, obeam's `_BOOT_P2.BIX` left alone, after the blocks in use
   were copied to the host; and the driver is p2-11's `sd` made this
   package's functions, with a line saying so, `forth/` having to stay one
-  directory that imports nothing of another module.
+  directory that imports nothing of another module; and, the user's
+  choice of 2026-10-31, p2-11's copyright line beside this project's in
+  `sd.ogo`'s header, the two LICENSE files being the same text and the
+  user the one author of both.
 - Booting with no host, the user's choice of 2026-10-30: from the
   board's flash now, OctoForth taking TAQOZ's place there, and from the
-  SD card later.
+  SD card later. From the card too, the user's choices of 2026-10-31:
+  obeam's `_BOOT_P2.BIX` on the card replaced for good by OctoForth's,
+  and one `boot.binary` for both, which interprets `sd:boot.fth`, or
+  `flash:boot.fth` if the card has none, so that a card's startup file
+  is taken before the flash's.
 - Going public, the user's words of 2026-10-30: this file goes public
   as it is, no redactions necessary; everything of the SD card's,
   `sd.ogo`'s notice and booting from the card among it, waits for the
-  weekend of 2026-10-31, with the user beside the board; and the
+  weekend of 2026-10-31, with the user beside the board (done that
+  day); and the
   release is built checked, `--unchecked` only if the hub RAM runs out
   while essential Forth words are still to be added. A release is
   built by `scripts/release.sh` from the tag's sources, `forth.Version`
@@ -300,7 +320,20 @@ version` and the clock they were taken at, never from the estimates.
   files and `Boot`, 2,244 bytes short, `main.ogo`'s 504,764. The loader
   erases no more than it writes (blocks 0 to 7, the survey of 2026-10-30
   showed, the rest erased), so the flash's files, from 1 MB on, stay;
-  it held no files after the tests of 2026-10-30. Before,
+  it held no files after the tests of 2026-10-30 and 2026-10-31. The
+  DIP switches are all off but FLASH. With FLASH on the board boots the
+  flash whatever the card holds (seen 2026-10-31 with obeam's
+  `_BOOT_P2.BIX` and with OctoForth's). With FLASH off and a
+  `_BOOT_P2.BIX` on the card the ROM boots the card, the banner 7.70 s
+  after a DTR reset (`scripts/boot.py -w 20`), and answers no loader
+  ("Could not find a P2"); and the flash is not there at all, its JEDEC
+  ID reading FF FF FF from the card's OctoForth and, after a power
+  cycle with no card boot, from one loaded into RAM, a wake-up and reset
+  by hand changing nothing (2026-10-31). A window with FLASH off is
+  held with one lock holder from its start to its end, the other
+  sessions told first: on 2026-10-31 a handover between two holders
+  let the ogo session's mutation pass take the lock, whose load then
+  failed. Before,
   the flash held TAQOZ Reloaded V2.14.0 (the image of 2024-02-19 from
   SourceForge's TAQOZ/binaries), written there on 2026-10-28 at the
   user's word by loading `_BOOT_P2.BIX` and typing `BACKUP FLASH`, and
@@ -606,7 +639,9 @@ All measured or read in this session and recorded with their sources in
   interprets the file name by a line `S" name" INCLUDED`, if
   FILE-STATUS finds it, unless a key comes within half a second, which
   it says first; the key is taken and what came with it, and with no
-  `Avail` it waits for none. `boot/` calls it; `TestFlash` both ways.
+  `Avail` it waits for none. It answers whether the file was there,
+  interpreted or skipped, so that `boot/` tries `flash:boot.fth` only
+  when the card has no `sd:boot.fth`. `TestFlash` both ways.
 - **Every word has executable code at `xt`**: a primitive its template and
   `jmp pb`, a colon word its frame (`~enter`, body, `~exit`), an OctoGo
   word a trap and `jmp pb`, a CONSTANT, VARIABLE or CREATE a literal and
@@ -664,7 +699,7 @@ scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the s
 scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
 scripts/flash.sh                # boot/ into the board's flash, booted at every reset with no loader; checked by scripts/boot.py
 scripts/release.sh [vX.Y.Z]     # build/release/vX.Y.Z/: the zip of oforth.binary and boot.binary built from the tag, and SHA256SUMS; no board
-flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset, the flash's OctoForth answering
+flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset, the flash's OctoForth answering; -w 20 for a boot from the card
 ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ Reloaded and P2XCForth, two minutes

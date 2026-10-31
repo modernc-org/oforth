@@ -49,8 +49,8 @@ at 230400 baud. Either:
 - **A release's binaries**, no OctoGo needed: from the
   [releases page](https://github.com/modernc-org/oforth/releases),
   `oforth.binary`, the REPL, which a P2 loader loads into the board's RAM,
-  and `boot.binary`, the same REPL for the board's flash, which runs a
-  startup file. FlexProp's `loadp2` loads them:
+  and `boot.binary`, the same REPL for the board's flash or an SD card,
+  which runs a startup file. FlexProp's `loadp2` loads them:
 
   ```sh
   loadp2 -t -b 230400 oforth.binary
@@ -157,7 +157,7 @@ host, and no directory is made, the FILE word set having no word for
 it. The board has no clock, so what OctoForth writes is dated
 1980-01-01.
 
-### The flash, and booting with no host
+### Booting with no host, from the flash or the card
 
 To run OctoForth with no host, write it into the board's flash, the
 P2-EDGE's FLASH switch on:
@@ -184,24 +184,46 @@ close, and only read after: `OPEN-FILE` opens it for reading,
 `CREATE-FILE` makes it anew, `DELETE-FILE` deletes it, and `RENAME-FILE`
 and `RESIZE-FILE` refuse it. A file takes 64 KB at least, so the flash
 holds 240 of them; one the board was reset while writing is not there.
-The OctoForth the board boots first interprets `flash:boot.fth`, if
-there is one, unless a key comes within half a second, which it says:
+The board boots an SD card instead with the FLASH switch off: the same
+`boot.binary` as `_BOOT_P2.BIX` in the root of the card's FAT32 volume,
+which the P2's ROM loads by itself. The ROM wants the file in one piece,
+as it is on a card with no other `_BOOT_P2.BIX` and its free space in one
+run, as a new card's is; COPY above writes it so from the host's directory
+too, in about 40 seconds:
+
+```
+S" boot.binary" S" sd:_BOOT_P2.BIX" COPY
+```
+
+The banner then comes 7.7 seconds after a reset, the ROM reading the card
+at about 65 KB/s. With the switch on, the flash is booted, whatever the
+card holds. While the switch is off and the card holds the file, no loader
+finds the board: switch it on, or take the card out, to load a program
+again. And with the switch off the flash is not there at all, to the ROM
+nor to OctoForth, so the card's OctoForth has the card's files only.
+
+The OctoForth the board boots, from the flash or the card, first
+interprets `sd:boot.fth`, if the card in the slot has one, and
+`flash:boot.fth` if not, unless a key comes within half a second, which
+it says:
 
 ```
 OctoForth, a native-code Forth for the P2
 flash:boot.fth: a key within half a second skips it
 ```
 
-So a program starts by itself at power-up, and a startup file that goes
-wrong is skipped by a key pressed at the reset. COPY above writes one
-from the host's directory or the card:
+So a program starts by itself at power-up, a card's startup file is
+taken before the flash's, and a startup file that goes wrong is skipped
+by a key pressed at the reset. COPY above writes one from the host's
+directory or the card:
 
 ```
 S" app.fth" S" flash:boot.fth" COPY
 ```
 
-The REPL loaded into RAM runs no startup file: the flash's program is
-`boot/`, which calls `Boot`, an embedding function, before the REPL.
+The REPL loaded into RAM runs no startup file: the program the board
+boots is `boot/`, which calls `Boot`, an embedding function, before the
+REPL.
 
 ## What it has and has not
 
@@ -314,7 +336,8 @@ on the REPL's cog, so `RUN` refuses a word that uses one. `forth.Serial`
 is the console the REPL has, a cog reading the serial line into a ring;
 `Quit` returns after `BYE`, and `forth.Exit` writes the loader's exit
 sequence, which ends `ogo run` with the status given. `forth.Boot`
-interprets a file, as `boot/` does the flash's startup file.
+interprets a file, as `boot/` does the startup file, and says whether it
+was there.
 [example/](example) is such a program, with words for the EDGE's LEDs and
 pins: `ogo run ./example`.
 
@@ -493,9 +516,9 @@ Developing OctoForth takes OctoGo and a board, its tests running there.
 - [forth/](forth): the Forth, its engine and its tests: the interpreter
   and the compiler in OctoGo, and `eng.spin2`, the primitives' templates
   and the code that enters compiled words, the one Spin2 object.
-- `main.ogo`: the REPL; [boot/](boot) the REPL the flash holds, which
-  runs the startup file; [example/](example) a program that embeds the
-  Forth.
+- `main.ogo`: the REPL; [boot/](boot) the REPL the board boots from the
+  flash or the card, which runs the startup file; [example/](example) a
+  program that embeds the Forth.
 - [bench/](bench): the benchmarks in the three systems' dialects, and
   [bench/third/](bench/third) the preludes for the third parties'.
 - [scripts/](scripts): what runs the suite, the benchmarks, the card's

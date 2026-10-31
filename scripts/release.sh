@@ -7,10 +7,10 @@
 # Release, as obeam's and ogo's scripts/release.sh do. The binaries are the
 # P2's, the same whatever the host, so a release is one zip: oforth.binary,
 # the REPL main.ogo makes, for a loader to load into the board's RAM;
-# boot.binary, boot/'s, for the board's flash, which runs flash:boot.fth
-# first; examples/bench.fth, the benchmarks; README.txt; LICENSE; and
-# LICENSE-flexprop, the binaries being flexspin's output, its runtime in
-# them. They are built from the tag's sources by git archive, not from the
+# boot.binary, boot/'s, for the board's flash or an SD card, which runs
+# sd:boot.fth or flash:boot.fth first; examples/bench.fth, the benchmarks;
+# README.txt; LICENSE; and LICENSE-flexprop, the binaries being flexspin's
+# output, its runtime in them. They are built from the tag's sources by git archive, not from the
 # working tree, with forth.Version set to the tag, which the banner then
 # says; at OctoGo's default clock, 160 MHz, for a 20 MHz crystal.
 #
@@ -108,9 +108,10 @@ for a board with a 20 MHz crystal, such as the P2-EDGE, which they run at
 160 MHz; the console is at 230400 baud.
 
   oforth.binary       the REPL, for a loader to load into the board's RAM
-  boot.binary         the same REPL for the board's flash: it first runs
-                      flash:boot.fth, if there is one, unless a key comes
-                      within half a second
+  boot.binary         the same REPL for the board's flash or an SD card:
+                      it first runs sd:boot.fth, or flash:boot.fth if the
+                      card has none, unless a key comes within half a
+                      second
   examples/bench.fth  five benchmarks, each printing a count of clocks
 
 With the board on a USB port, and FlexProp's loadp2 or OctoGo's ogo loadp2:
@@ -123,6 +124,12 @@ With the board on a USB port, and FlexProp's loadp2 or OctoGo's ogo loadp2:
                                             switch FLASH on): leave the terminal
                                             only once the banner has come, and
                                             use loadp2 0.078 or newer
+
+Or copy boot.binary into the root of a FAT32 SD card as _BOOT_P2.BIX, in one
+piece (a card with no other _BOOT_P2.BIX and free space in one run, as a new
+card's), and the board boots the card with the P2-EDGE's FLASH switch off,
+its banner 7.7 seconds after a reset. While the switch is off and the card
+holds the file, no loader finds the board, and the flash is not there.
 
 A file named sd:NAME is on the SD card in the board's slot, one named
 flash:NAME in the board's flash, written as it is made and read only after,

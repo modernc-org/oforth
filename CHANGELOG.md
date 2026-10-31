@@ -44,8 +44,10 @@ The first release, built and tested with OctoGo v1.0.0-rc.3.
   made and read after.
 - **Booting with no host**: `boot.binary`, written into the board's flash by
   `scripts/flash.sh` or `loadp2 -FLASH`, boots at every reset that no loader
-  answers, and first interprets `flash:boot.fth`, unless a key comes within
-  half a second.
+  answers; as an SD card's `_BOOT_P2.BIX`, it boots from the card with the
+  P2-EDGE's FLASH switch off. It first interprets `sd:boot.fth`, or
+  `flash:boot.fth` if the card has none, unless a key comes within half a
+  second.
 - **The embedding**: `forth/` is the whole Forth, one directory an OctoGo
   program copies, with `Init`, `Define`, `Push`, `Pop`, `Evaluate`,
   `Serial`, `Quit`, `Exit` and `Boot`; `example/` is such a program.
