@@ -57,8 +57,9 @@ at 230400 baud. Either:
   ```
 
 - **From source**, with OctoGo v1.0.0-rc.3 or newer, which carries the
-  compiler and the loader (`go install modernc.org/ogo@latest`, with Go 1.26
-  or newer; see [its README](https://gitlab.com/cznic/ogo)):
+  compiler and the loader (`go install modernc.org/ogo@v1.0.0-rc.3`, with
+  Go 1.26 or newer, `@latest` being an older release until OctoGo's v1.0.0;
+  see [its README](https://gitlab.com/cznic/ogo)):
 
   ```sh
   git clone https://gitlab.com/cznic/oforth
@@ -88,10 +89,10 @@ OctoForth, a native-code Forth for the P2
 : sq DUP * ;  ok
 7 sq . 49  ok
 SEE sq sq is a colon definition
-24D24  ENTER                    F187CC01 FC33EFE6
-24D2C  DUP                      FC37C1E1
-24D30  *                        FAA7C3DF FD03C3E0 FD63C018
-24D3C  EXIT                     FAA3EFE6 F107CC01 FD63EE2C
+3225C  ENTER                    F187CC01 FC33EFE6
+32264  DUP                      FC37C1E1
+32268  *                        FAA7C3DF FD03C3E0 FD63C018
+32274  EXIT                     FAA3EFE6 F107CC01 FD63EE2C
  ok
 ```
 
@@ -278,8 +279,8 @@ cog, and a literal pin is folded into the instruction:
 blinks the EDGE's LED from cog RAM, `56 PIN-TOGGLE` being the one long
 `DRVNOT #56`. In a DO loop with nothing else in its body, REP repeats it:
 1,000 toggles take 4,133 clocks, 4 a toggle, a 20 MHz square wave at
-160 MHz, and 9,135 with the pin taken from the stack, `DUP PIN-TOGGLE`
-(ogo v0.58.1, 2026-10-29). Code that fast meets the pin's own delay: the
+160 MHz, and 9,140 with the pin taken from the stack, `DUP PIN-TOGGLE`
+(OctoGo v1.0.0-rc.3, 2026-10-31). Code that fast meets the pin's own delay: the
 input follows the output a few clocks late, so `56 PIN-LOW 56 PIN-IN`,
 compiled, reads the pin as it was before.
 
@@ -346,13 +347,14 @@ pins: `ogo run ./example`.
 `scripts/bench.sh` runs the same five programs on OctoForth, on TAQOZ
 Reloaded and on P2XCForth, one after the other on a P2-EDGE, each
 timed by the system's own counter, in clocks, which do not depend on the
-clock frequency. Fewer is faster.
+clock frequency. Fewer is faster. OctoForth is built by OctoGo
+v1.0.0-rc.3, as v0.1.0's binaries are (measured 2026-10-31).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| an empty `DO LOOP`, 100,000 times | 200,124 | 7,200,129 | 3,200,288 |
+| an empty `DO LOOP`, 100,000 times | 200,132 | 7,200,129 | 3,200,288 |
 | an empty colon word called 100,000 times | 200,132 | 13,600,129 | 9,600,288 |
-| the Byte sieve, 8192 flags, one pass | 1,400,049 | 6,390,449 | 13,546,112 |
+| the Byte sieve, 8192 flags, one pass | 1,400,057 | 6,390,449 | 13,546,112 |
 | `25 fib`, recursive | 18,080,718 | 53,969,641 | 97,114,008 |
 | `10 fact` 10,000 times, recursive | 14,560,026 | 48,960,129 | 42,800,280 |
 
@@ -396,22 +398,23 @@ systems](https://www.complang.tuwien.ac.at/forth/performance.html), which
 Gforth's manual compares with too), and the Stanford integer benchmarks
 John Hennessy gathered, in Martin Fraeman's Forth of 1989. Every system
 runs at 200 MHz, timed by the host between two marks the system writes
-around the work, in milliseconds; fewer is faster.
+around the work, in milliseconds; fewer is faster. OctoForth is built by
+OctoGo v1.0.0-rc.3 (measured 2026-10-31).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| Ertl: sieve, 1000 times | 5,503 | does not run | 34,380 |
-| Ertl: bubble sort, 6000 | 10,207 | 82,960 | 78,262 |
+| Ertl: sieve, 1000 times | 5,503 | does not run | 34,379 |
+| Ertl: bubble sort, 6000 | 10,207 | 82,959 | 78,263 |
 | Ertl: matrix multiply, 64 by 64 | 208 | 1,288 | 1,168 |
-| Ertl: `34 fib` | 7,743 | 23,477 | 42,075 |
-| Stanford Perm, 10 times | 784 | does not load | does not fit |
-| Stanford Towers | 1,376 | | |
+| Ertl: `34 fib` | 7,743 | 23,478 | 42,075 |
+| Stanford Perm, 10 times | 767 | does not load | does not fit |
+| Stanford Towers | 1,392 | | |
 | Stanford Queens | 688 | | |
-| Stanford Intmm | 1,680 | | |
+| Stanford Intmm | 1,678 | | |
 | Stanford Puzzle | 6,607 | | |
 | Stanford Quick | 864 | | |
-| Stanford Bubble | 992 | | |
-| Stanford Trees | 3,040 | | |
+| Stanford Bubble | 990 | | |
+| Stanford Trees | 3,376 | | |
 
 The programs run as their authors wrote them but for what the script
 prints: the matrices are 64 by 64, not 200 by 200, which needs 480 KB;
@@ -478,8 +481,9 @@ word, the loops inside it are cached instead, and the tag spares them the
 copy when they are entered again. A loop not cached costs nothing: its
 reserved longs are taken out when it ends.
 
-Timed by the board's clock, one run of each Stanford program, as the mean
-of eight builds that move the code by one to eight longs:
+Timed by the board's clock when the cache was made (2026-10-28, OctoGo
+v0.58.1), one run of each Stanford program, as the mean of eight builds
+that move the code by one to eight longs:
 
 | | before the cache | with it | |
 | --- | --- | --- | --- |
@@ -504,10 +508,10 @@ the limit less the index. LOOP's compare and branch stay after the block
 and run on only when the count is 0, a `DO` from a limit to itself being
 2^32 iterations, which REP would take for none. The empty loop takes 2
 clocks an iteration so, against 8, and Ertl's matrix multiplication,
-whose inner loop is such a loop, 208 ms against 224. Fraeman's inner
-loops branch or call, or are `BEGIN` loops over the return stack, so only
-his set-up loops are repeated, and his times move by no more than where
-the longer loops move the code to.
+whose inner loop is such a loop, 208 ms against 224 (2026-10-29).
+Fraeman's inner loops branch or call, or are `BEGIN` loops over the
+return stack, so only his set-up loops are repeated, and his times move
+by no more than where the longer loops move the code to.
 
 ## The repository
 

@@ -110,10 +110,20 @@ public: `sd.ogo` carries p2-11's copyright line beside this project's,
 and the board boots `boot/` from the card too, as its `_BOOT_P2.BIX`,
 with the FLASH switch off, its startup file `sd:boot.fth`, or
 `flash:boot.fth` if the card has none (the user's choices of that day,
-below). OctoGo v1.0.0 being weeks away, the user is considering
-v0.1.0 as a preview built with v1.0.0-rc.3, whose binaries ogo's master
-of 2026-10-31 (e832316) builds byte for byte the same. Not yet: a host
-twin.
+below); then v0.1.0 prepared, built with OctoGo v1.0.0-rc.3 (the
+user's decision of that day, below), the tests, the suite and the
+benchmarks run again with it. That found a trap into OctoGo dearer
+than at 6c3cb4b, where the README's third parties' table had been
+measured: at 160 MHz, both built by rc.3, `HERE DROP` in a loop 1,368
+clocks an iteration then and 1,832 now, `0 ALLOT` 1,568 and 2,496, `0 ,`
+1,745 and 2,824. `needs` and `octo` are chains of compares (flexspin
+makes no table of a switch over scattered ids), which every word set
+since made longer, a word in no case of `needs`, HERE among them,
+passing about a hundred compares. Stanford Trees, which calls HERE and
+ALLOT 50,000 times, went from 3,040 ms to 3,376, the other programs
+being within placement (the 6c3cb4b sources built by rc.3 gave 3,040
+again; shifting Trees' data by 4 to 128 bytes moved it by 3% at most).
+The cure is a dispatch by table. Not yet: a host twin.
 The repository is on
 GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
 ogo's, for a GitHub mirror the user hopes for later, with pre-built
@@ -274,6 +284,14 @@ section 9 has the reasons:
   while essential Forth words are still to be added. A release is
   built by `scripts/release.sh` from the tag's sources, `forth.Version`
   set to the tag, which the banner says.
+- v0.1.0, the user's decision of 2026-10-31: a preview built with
+  OctoGo v1.0.0-rc.3, the newest tag, OctoGo's v1.0.0 being weeks away
+  (it waits for a candidate's three clean rounds and two weeks in public
+  with no silent fault); ogo's master of that day (e832316) built
+  `oforth.binary` and `boot.binary` byte for byte as rc.3 does. The
+  README's two tables, the pin's clocks and the SEE example were
+  measured again with rc.3 on 2026-10-31. A later
+  release is built with v1.0.0 and measured again.
 
 The bar is P2XCForth's XBYTE core, not TAQOZ: section 3.6's table has the
 clocks per operation of all three. M2 runs the Byte sieve, the empty loop
@@ -306,7 +324,9 @@ version` and the clock they were taken at, never from the estimates.
   shared with the ogo, p2-11 and obeam sessions. Its flash, a W25Q128
   (JEDEC ID EF 70 18, 16 MB), holds OctoForth since 2026-10-30, written
   by `scripts/flash.sh` (`ogo loadp2 -FLASH`, the loader's boot stub at
-  0 and the image from $400): the board boots it after a reset with no
+  0 and the image from $400), since 2026-10-31 v0.1.0's `boot.binary`,
+  from `scripts/release.sh`'s run on the commit before the tag, the same
+  code, its banner "OctoForth v0.1.0, ...": the board boots it after a reset with no
   loader, its banner at 230400 baud half a second after the reset,
   which `scripts/boot.py` reads. The loader's `-FLASH` must keep its
   terminal open until the banner: without `-t` it closes the port as

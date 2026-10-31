@@ -10,9 +10,12 @@ A released section is frozen: it says what that release did, and a later fix
 to the same area is a new entry under **Unreleased**, not an edit to the old
 one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.1.0
 
-The first release, built and tested with OctoGo v1.0.0-rc.3.
+The first release, a preview, built and tested with OctoGo v1.0.0-rc.3: its
+binaries are rc.3's output, and the README's numbers were measured with it.
+OctoGo's v1.0.0 is not out yet; a later release will be built with it and
+measured again.
 
 ### Added
 
