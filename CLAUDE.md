@@ -124,10 +124,14 @@ ALLOT 50,000 times, went from 3,040 ms to 3,376, the other programs
 being within placement (the 6c3cb4b sources built by rc.3 gave 3,040
 again; shifting Trees' data by 4 to 128 bytes moved it by 3% at most).
 The cure is a dispatch by table. Not yet: a host twin.
-The repository is on
-GitLab (cznic/oforth, `origin`), private. `.github/FUNDING.yml` is
-ogo's, for a GitHub mirror the user hopes for later, with pre-built
-binaries.
+The repository is
+public since 2026-10-31, at https://gitlab.com/cznic/oforth (`origin`),
+and mirrored to https://github.com/modernc-org/oforth, both set up by
+the user that day; whatever is pushed is seen at once. v0.1.0 is
+released on the mirror, https://github.com/modernc-org/oforth/releases/tag/v0.1.0,
+marked a pre-release, with `oforth-v0.1.0.zip` (sha256 2bf155e0...) and
+`SHA256SUMS`, both checked byte for byte against the local build the
+same day, and the notes drafted here. `.github/FUNDING.yml` is ogo's.
 
 The files:
 
