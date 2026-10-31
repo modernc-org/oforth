@@ -45,9 +45,7 @@ func octoTools(id int) {
 	case oSynonym:
 		synonym()
 	default:
-		if !runExported(id) {
-			abort("no such OctoGo word")
-		}
+		abort("no such OctoGo word")
 	}
 }
 

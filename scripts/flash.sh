@@ -24,7 +24,7 @@ set -eu
 port=${1:-/dev/ttyUSB0}
 dir=build/flash
 mkdir -p $dir
-ogo build -o $dir/oforth.binary ./boot
+ogo build --no-inline -o $dir/oforth.binary ./boot
 size=$(wc -c < $dir/oforth.binary)
 if [ $size -ge 507904 ]; then
 	echo "$dir/oforth.binary is $size bytes; the flash takes images under 507904"

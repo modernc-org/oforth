@@ -106,7 +106,7 @@ for name, path in progs.items():
                 print("for p2xc, in %s: %s shortened to 19 characters" % (name, ", ".join(long)))
         open("%s/run/%s-%s.fth" % (d, system, name), "w", encoding="latin-1").write(pre + "\n" + body)
 PY
-ogo build --clock 200MHz -o $dir/oforth.binary .
+ogo build --no-inline --clock 200MHz -o $dir/oforth.binary .
 wait_port="for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done; fuser -s $port && { echo 'port busy'; exit 1; }"
 for prog in $progs; do
 	for system in $systems; do

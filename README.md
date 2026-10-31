@@ -64,11 +64,14 @@ at 230400 baud. Either:
   ```sh
   git clone https://gitlab.com/cznic/oforth
   cd oforth
-  ogo run
+  ogo run --no-inline
   ```
 
   `ogo run` builds `oforth.binary`, loads it into the board's RAM and opens
-  a terminal.
+  a terminal. `--no-inline` is how OctoForth is built: OctoGo inlines small
+  functions unless told not to, which OctoForth has no hub RAM for, and
+  then builds it with every switch a chain of compares, where with
+  `--no-inline` they stay tables of jumps, and in a third of the time.
 
 The loader finds the board by itself; with several, name the port: `-p
 /dev/ttyUSB0` (`-p COM3` on Windows). On Linux the serial port belongs to
@@ -89,10 +92,10 @@ OctoForth, a native-code Forth for the P2
 : sq DUP * ;  ok
 7 sq . 49  ok
 SEE sq sq is a colon definition
-3225C  ENTER                    F187CC01 FC33EFE6
-32264  DUP                      FC37C1E1
-32268  *                        FAA7C3DF FD03C3E0 FD63C018
-32274  EXIT                     FAA3EFE6 F107CC01 FD63EE2C
+3250C  ENTER                    F187CC01 FC33EFE6
+32514  DUP                      FC37C1E1
+32518  *                        FAA7C3DF FD03C3E0 FD63C018
+32524  EXIT                     FAA3EFE6 F107CC01 FD63EE2C
  ok
 ```
 
@@ -106,7 +109,7 @@ To INCLUDE files, run it with the loader's file server, which serves a
 directory of the host by 9P over the same serial line:
 
 ```sh
-ogo run -9 .
+ogo run --no-inline -9 .
 ```
 
 or, with a release's binary, `loadp2 -t -9 . -b 230400 oforth.binary`.
@@ -340,7 +343,7 @@ sequence, which ends `ogo run` with the status given. `forth.Boot`
 interprets a file, as `boot/` does the startup file, and says whether it
 was there.
 [example/](example) is such a program, with words for the EDGE's LEDs and
-pins: `ogo run ./example`.
+pins: `ogo run --no-inline ./example`.
 
 ## Three Forths on one board
 
@@ -348,7 +351,7 @@ pins: `ogo run ./example`.
 Reloaded and on P2XCForth, one after the other on a P2-EDGE, each
 timed by the system's own counter, in clocks, which do not depend on the
 clock frequency. Fewer is faster. OctoForth is built by OctoGo
-v1.0.0-rc.3, as v0.1.0's binaries are (measured 2026-10-31).
+v1.0.0-rc.3, `--no-inline` (measured 2026-10-31).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
@@ -356,7 +359,7 @@ v1.0.0-rc.3, as v0.1.0's binaries are (measured 2026-10-31).
 | an empty colon word called 100,000 times | 200,132 | 13,600,129 | 9,600,288 |
 | the Byte sieve, 8192 flags, one pass | 1,400,057 | 6,390,449 | 13,546,112 |
 | `25 fib`, recursive | 18,080,718 | 53,969,641 | 97,114,008 |
-| `10 fact` 10,000 times, recursive | 14,560,026 | 48,960,129 | 42,800,280 |
+| `10 fact` 10,000 times, recursive | 15,360,026 | 48,960,129 | 42,800,280 |
 
 The sources are in [bench/](bench), the same algorithm in each system's
 dialect; the sieve is BYTE's of 1981 as P2XCForth's archive has it, with
@@ -386,7 +389,7 @@ of them being in this repository. Taken as they are:
   recursive, measure its calls (34 clocks a call and return, 8 more for the
   frame). Its timings, too, move by a few percent with where code lands, a
   taken branch in hub RAM costing 13 to 20 clocks with its target's place:
-  `fact` took 15,360,026 in one build.
+  `fact` took 14,560,026 in another build.
 
 ## Third parties' benchmarks
 
@@ -399,22 +402,22 @@ Gforth's manual compares with too), and the Stanford integer benchmarks
 John Hennessy gathered, in Martin Fraeman's Forth of 1989. Every system
 runs at 200 MHz, timed by the host between two marks the system writes
 around the work, in milliseconds; fewer is faster. OctoForth is built by
-OctoGo v1.0.0-rc.3 (measured 2026-10-31).
+OctoGo v1.0.0-rc.3, `--no-inline` (measured 2026-10-31).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| Ertl: sieve, 1000 times | 5,503 | does not run | 34,379 |
-| Ertl: bubble sort, 6000 | 10,207 | 82,959 | 78,263 |
+| Ertl: sieve, 1000 times | 5,503 | does not run | 34,380 |
+| Ertl: bubble sort, 6000 | 10,175 | 82,959 | 78,263 |
 | Ertl: matrix multiply, 64 by 64 | 208 | 1,288 | 1,168 |
-| Ertl: `34 fib` | 7,743 | 23,478 | 42,075 |
-| Stanford Perm, 10 times | 767 | does not load | does not fit |
-| Stanford Towers | 1,392 | | |
-| Stanford Queens | 688 | | |
-| Stanford Intmm | 1,678 | | |
+| Ertl: `34 fib` | 7,743 | 23,477 | 42,075 |
+| Stanford Perm, 10 times | 768 | does not load | does not fit |
+| Stanford Towers | 1,393 | | |
+| Stanford Queens | 704 | | |
+| Stanford Intmm | 1,664 | | |
 | Stanford Puzzle | 6,607 | | |
 | Stanford Quick | 864 | | |
-| Stanford Bubble | 990 | | |
-| Stanford Trees | 3,376 | | |
+| Stanford Bubble | 992 | | |
+| Stanford Trees | 2,960 | | |
 
 The programs run as their authors wrote them but for what the script
 prints: the matrices are 64 by 64, not 200 by 200, which needs 480 KB;
@@ -529,16 +532,18 @@ Developing OctoForth takes OctoGo and a board, its tests running there.
   check and the flash's write, each saying in its header what it does.
 - [probe/m0](probe/m0): the probe of the research, whose numbers are
   ASSESSMENT.md's.
+- [OCTOGO.md](OCTOGO.md): what OctoForth has found out about OctoGo, with
+  the programs that show it and the numbers.
 
 ```sh
-ogo build                 # oforth.binary, and oforth.p2asm, the assembly it was made of
-ogo build --report        # where the hub RAM goes
-ogo test ./forth          # the tests, on the board, writing on its card and in its flash
-scripts/f2012.sh          # the Forth-2012 suite's tests, INCLUDEd by 9P; -sd for the FILE tests on the card
-scripts/cardcheck.sh      # fsck.fat -n of the card's volume, from an image of its blocks in use
-scripts/flash.sh          # boot/ into the board's flash, then a reset and a check that it answers
-scripts/bench.sh          # the benchmarks on OctoForth, TAQOZ and P2XCForth
-scripts/third.sh          # the third parties' benchmarks
+ogo build --no-inline           # oforth.binary, and oforth.p2asm, the assembly it was made of
+ogo build --no-inline --report  # where the hub RAM goes
+ogo test ./forth                # the tests, on the board, writing on its card and in its flash
+scripts/f2012.sh                # the Forth-2012 suite's tests, INCLUDEd by 9P; -sd for the FILE tests on the card
+scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use
+scripts/flash.sh                # boot/ into the board's flash, then a reset and a check that it answers
+scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ and P2XCForth
+scripts/third.sh                # the third parties' benchmarks
 ```
 
 A release: a section in `CHANGELOG.md`, commit, `git tag -a vX.Y.Z`, then

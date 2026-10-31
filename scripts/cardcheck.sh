@@ -21,7 +21,7 @@ port=${1:-/dev/ttyUSB0}
 dir=build/card
 PATH=$PATH:/sbin:/usr/sbin
 mkdir -p $dir
-ogo build -o $dir/carddump.binary ./scripts/carddump
+ogo build --no-inline -o $dir/carddump.binary ./scripts/carddump
 rm -f $dir/raw.txt
 flock -o -w 900 /tmp/p2-board.lock sh -c "
 	for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done

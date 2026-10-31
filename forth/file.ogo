@@ -845,6 +845,6 @@ func octoFile(id int) {
 	case oBin:
 		push(pop() | famBin)
 	default:
-		octoCog(id)
+		abort("no such OctoGo word")
 	}
 }

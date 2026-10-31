@@ -8,7 +8,7 @@
 // forth.Pop and give their results by forth.Push, defines a word in Forth
 // with one of them, and runs the REPL. On a P2-EDGE,
 //
-//	ogo run ./example
+//	ogo run --no-inline ./example
 //
 // and then, for instance, 5 COUNT-UP, 6 100 BLINK or PINS.
 //

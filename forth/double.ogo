@@ -62,7 +62,7 @@ func octoDouble(id int) {
 		n1 := int32(pop())
 		pushd(uint64(mStarSlash(int64(popd()), n1, n2)))
 	default:
-		octoString(id)
+		abort("no such OctoGo word")
 	}
 }
 

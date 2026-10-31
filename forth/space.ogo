@@ -24,21 +24,37 @@ var (
 	cp   int // the next free long of the code space
 
 	data []uint32
+
+	// Where the data space begins, how many bytes it has, and its DP cell,
+	// which Init sets, so that allot and comma, which compiled code calls
+	// by the thousand, take neither a call nor the slice to know them: no
+	// function is inlined in a build of OctoForth.
+	dataAt  uint32
+	dataLen int32
+	dpCell  *uint32
 )
 
 func codeAddr(i int) uint32 {
 	return uint32(uintptr(unsafe.Pointer(&code[0]))) + uint32(i)*4
 }
 
-func dataBase() uint32 { return uint32(uintptr(unsafe.Pointer(&data[0]))) }
+// setData makes data the data space.
+func setData(d []uint32) {
+	data = d
+	dataAt = uint32(uintptr(unsafe.Pointer(&data[0])))
+	dataLen = int32(len(data)) * 4
+	dpCell = &data[cellDP]
+}
 
-func here() uint32 { return data[cellDP] }
+func dataBase() uint32 { return dataAt }
+
+func here() uint32 { return *dpCell }
 
 // dpOff answers HERE as an offset into the data space, and setDpOff sets
 // it so; the cell DP holds it as an address, as a program sees it.
-func dpOff() uint32 { return data[cellDP] - dataBase() }
+func dpOff() uint32 { return *dpCell - dataAt }
 
-func setDpOff(o uint32) { data[cellDP] = dataBase() + o }
+func setDpOff(o uint32) { *dpCell = dataAt + o }
 
 func peek(a uint32) uint32 { return *(*uint32)(unsafe.Pointer(uintptr(a))) }
 
@@ -51,12 +67,12 @@ func pokeb(a uint32, v byte) { *(*byte)(unsafe.Pointer(uintptr(a))) = v }
 // allot moves HERE on by n bytes, which may be negative, and answers false,
 // having aborted, when that leaves the data space.
 func allot(n int32) bool {
-	d := int32(dpOff()) + n
-	if d < dataFirst || d > int32(len(data))*4 {
+	d := int32(*dpCell-dataAt) + n
+	if d < dataFirst || d > dataLen {
 		abort("data space")
 		return false
 	}
-	setDpOff(uint32(d))
+	*dpCell = dataAt + uint32(d)
 	return true
 }
 
@@ -67,16 +83,16 @@ func align() {
 }
 
 func comma(v uint32) {
-	a := here()
+	a := *dpCell
 	if allot(4) {
-		poke(a, v)
+		*(*uint32)(unsafe.Pointer(uintptr(a))) = v
 	}
 }
 
 func ccomma(v byte) {
-	a := here()
+	a := *dpCell
 	if allot(1) {
-		pokeb(a, v)
+		*(*byte)(unsafe.Pointer(uintptr(a))) = v
 	}
 }
 

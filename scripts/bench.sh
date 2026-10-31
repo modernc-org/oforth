@@ -15,7 +15,7 @@
 set -eu
 port=${1:-/dev/ttyUSB0}
 mkdir -p build
-ogo build -o build/oforth.binary .
+ogo build --no-inline -o build/oforth.binary .
 taqoz=$(scripts/taqoz.sh)
 wait_port="for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done; fuser -s $port && { echo 'port busy'; exit 1; }"
 printf 'OctoForth   '

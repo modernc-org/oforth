@@ -116,14 +116,20 @@ benchmarks run again with it. That found a trap into OctoGo dearer
 than at 6c3cb4b, where the README's third parties' table had been
 measured: at 160 MHz, both built by rc.3, `HERE DROP` in a loop 1,368
 clocks an iteration then and 1,832 now, `0 ALLOT` 1,568 and 2,496, `0 ,`
-1,745 and 2,824. `needs` and `octo` are chains of compares (flexspin
-makes no table of a switch over scattered ids), which every word set
-since made longer, a word in no case of `needs`, HERE among them,
+1,745 and 2,824. `needs` and `octo` were chains of compares, which
+every word set since made longer, a word in no case of `needs`, HERE among them,
 passing about a hundred compares. Stanford Trees, which calls HERE and
 ALLOT 50,000 times, went from 3,040 ms to 3,376, the other programs
 being within placement (the 6c3cb4b sources built by rc.3 gave 3,040
 again; shifting Trees' data by 4 to 128 bytes moved it by 3% at most).
-The cure is a dispatch by table. Not yet: a host twin.
+The cause, found the same day: rc.3 builds OctoForth in its plainest
+form, no function inlined and every switch a chain of compares (below,
+"OctoGo facts"); the cure, the user's yes of that day: `octoLater`
+sends a word straight to its switch, `octo2` split in three, and every
+script builds `--no-inline`, which keeps the switches tables of jumps,
+and `allot` and `comma` keep the data space's address and DP cell in
+variables: Trees 2,960 ms, the README's tables measured again so.
+Not yet: a host twin.
 The repository is
 public since 2026-10-31, at https://gitlab.com/cznic/oforth (`origin`),
 and mirrored to https://github.com/modernc-org/oforth, both set up by
@@ -149,6 +155,13 @@ The files:
   milestones M0 to M4 (6), the risks (7), what OctoGo gets (8), the open
   points for the discussion (9), housekeeping (10) and the sources. It is
   plain ASCII with `--` for a dash; keep it so.
+- `OCTOGO.md`: what this project found out about OctoGo, as p2-11's
+  OCTOGO.md, an entry removed when `ogo` no longer shows it and OctoForth
+  no longer works around it; begun 2026-10-31 with the fallback of
+  `ogo build`, which the ogo session was told of the same day and holds
+  for after v1.0.0, `master` being frozen to fixes; a build that fits
+  none of the three ways while `--no-inline` fits would be a false
+  refusal, to be sent to it at once.
 - `README.md`: what it is, the installation (a release's binaries, for
   the GitHub mirror's releases page, or from source), getting started,
   what it has and has not, the P2 words, the embedding, the benchmarks,
@@ -302,6 +315,12 @@ section 9 has the reasons:
   README's two tables, the pin's clocks and the SEE example were
   measured again with rc.3 on 2026-10-31. A later
   release is built with v1.0.0 and measured again.
+- `--no-inline` for every build of OctoForth, the user's yes of
+  2026-10-31: the scripts, the release and the README's commands (not
+  `ogo test`, which has no such flag, nor the probe, whose numbers are
+  the default build's); and a note to OctoGo, which the user also said
+  yes to, that its fallback could try the program without inlining and
+  with its C switches before it makes them chains.
 
 The bar is P2XCForth's XBYTE core, not TAQOZ: section 3.6's table has the
 clocks per operation of all three. M2 runs the Byte sieve, the empty loop
@@ -432,6 +451,21 @@ All measured or read in this session and recorded with their sources in
   the engine calls may recurse; `ogo build` writes `<name>.p2asm` beside
   the binary, which is how generated code is judged, and `ogo build
   --report` says where the bytes went.
+- `ogo build` tries a program three ways and keeps the first that
+  fits, saying nothing: its small functions inlined and each switch of
+  constant cases a C switch, which flexspin makes a table of jumps; the
+  same with chains of compares; and no function inlined, with chains.
+  OctoForth has always been the third (6c3cb4b too): inlined, `octo2`
+  alone took 222 registers, past the cog's, and split, the program was
+  560,428 bytes, 36 KB past the hub. `--no-inline` builds the fourth
+  way, which the fallback never tries, no function inlined and the C
+  switches kept, which fits: on 2026-10-31, at 160 MHz, `HERE` 1,272
+  clocks a trap against the third way's 1,856, `KEY?` 1,808 against
+  2,088 (5,600 before `octoLater`), Stanford Trees 3,136 ms at 200 MHz
+  against 3,376 (2,960 with `allot` and `comma` changed, below), the
+  build 18.6 s against 65. A small function is a
+  call either way, its registers saved, which is why `allot` and
+  `comma` read the DP cell themselves.
 
 ## The Forth's architecture
 
@@ -475,11 +509,15 @@ All measured or read in this session and recorded with their sources in
   emitters, the pending literal that the next primitive folds, calls, and
   the control-flow stack; `interp.ogo` input, numbers, `exec` (run, serve
   traps, resume), errors and the REPL; `words.ogo` the words OctoGo
-  executes, a `switch` in `octo`, with `needs` giving how many cells each
-  takes, checked before it runs (`octo` has M1's words, `octo2` M2's);
+  executes, with `needs` giving how many cells each takes, checked
+  before it runs: `octo` has M1's words in its switch and hands a later
+  one to `octoLater`, which sends it straight to its switch by the run
+  of numbers it is in, `octo2` to `octo4` M2's, the switches after them
+  in the files below (a run begins at its switch's first word, and a
+  switch's default aborts);
   `see.ogo` SEE, which reads code back by matching the templates, longest
   first, with immediates, AUGS and branch targets decoded; `file.ogo` the
-  file layer, INCLUDE and the FILE words (`octoFile`, after `octo2`);
+  file layer, INCLUDE and the FILE words (`octoFile`, after `octo4`);
   `nine.ogo` the 9P client under it; `cog.ogo` RUN (`octoCog`, after
   `octoFile`); `exception.ogo` CATCH and THROW (`octoException`, after
   `octoCog`); `double.ogo` the DOUBLE word set's OctoGo words, its
@@ -701,8 +739,9 @@ All measured or read in this session and recorded with their sources in
 - A new primitive is a template entry; a new OctoGo word is an `o...`
   constant, its name at the same place in `octoNames` (the names in the
   order of the numbers, a table since 150 calls of `octoWord` were 6 KB
-  of code) and its flags in `octoFlags` if it has any, a `case` in
-  `octo` or a later switch, and its count in `needs`; a new test is a `check` in `forth/forth_test.ogo`.
+  of code) and its flags in `octoFlags` if it has any, the constant
+  written in its set's run, so that `octoLater` finds its switch, a
+  `case` in that switch, and its count in `needs`; a new test is a `check` in `forth/forth_test.ogo`.
 - Spin2 traps met: a label cannot be a condition's name (`if_e` is one); in
   Spin code a CON name is a constant, so the accessors name PR0-PR7; a
   method and a DAT label cannot share a name; names are case-insensitive;
@@ -715,22 +754,22 @@ All measured or read in this session and recorded with their sources in
 ```sh
 ogo version                     # record it with every measurement
 ogo fmt -l -w .                 # format in place
-ogo build                       # -> oforth.binary and oforth.p2asm
-ogo build --report              # where the hub RAM goes
-ogo build --clock 200MHz        # the default is 160 MHz
-flock -w 900 /tmp/p2-board.lock ogo run          # build, load, the REPL at 230400 baud; Ctrl-] leaves
+ogo build --no-inline           # -> oforth.binary and oforth.p2asm; --no-inline always (OctoGo facts)
+ogo build --no-inline --report  # where the hub RAM goes
+ogo build --no-inline --clock 200MHz  # the default is 160 MHz
+flock -w 900 /tmp/p2-board.lock ogo run --no-inline          # build, load, the REPL at 230400 baud; Ctrl-] leaves
 flock -w 900 /tmp/p2-board.lock ogo test ./forth # the tests, on the board, seconds
 flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
-flock -w 900 /tmp/p2-board.lock ogo run ./example # M3's embedding demo
+flock -w 900 /tmp/p2-board.lock ogo run --no-inline ./example # M3's embedding demo
 scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS tests on the board, INCLUDEd by 9P, a minute; errors: 0
 scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
 scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
 scripts/flash.sh                # boot/ into the board's flash, booted at every reset with no loader; checked by scripts/boot.py
 scripts/release.sh [vX.Y.Z]     # build/release/vX.Y.Z/: the zip of oforth.binary and boot.binary built from the tag, and SHA256SUMS; no board
 flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset, the flash's OctoForth answering; -w 20 for a boot from the card
-ogo run -9 .                    # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
+ogo run --no-inline -9 .        # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ Reloaded and P2XCForth, two minutes
 ```

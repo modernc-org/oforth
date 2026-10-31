@@ -10,9 +10,11 @@
 # boot.binary, boot/'s, for the board's flash or an SD card, which runs
 # sd:boot.fth or flash:boot.fth first; examples/bench.fth, the benchmarks;
 # README.txt; LICENSE; and LICENSE-flexprop, the binaries being flexspin's
-# output, its runtime in them. They are built from the tag's sources by git archive, not from the
-# working tree, with forth.Version set to the tag, which the banner then
-# says; at OctoGo's default clock, 160 MHz, for a 20 MHz crystal.
+# output, its runtime in them. They are built from the tag's sources by git
+# archive, not from the working tree, with forth.Version set to the tag,
+# which the banner then says; at OctoGo's default clock, 160 MHz, for a 20
+# MHz crystal, and --no-inline, as every script builds OctoForth (CLAUDE.md
+# says why).
 #
 # Usage: scripts/release.sh [VERSION]
 #   VERSION defaults to the tag at HEAD, so the flow is: a section in
@@ -86,7 +88,7 @@ grep -q "^const Version = \"$VERSION\"$" "$v" && grep -q "^const release = \" $V
 }
 
 echo "building OctoForth $VERSION from $REF with ogo $OGO"
-(cd "$SRC" && ogo build -o "$STAGE/oforth.binary" . && ogo build -o "$STAGE/boot.binary" ./boot)
+(cd "$SRC" && ogo build --no-inline -o "$STAGE/oforth.binary" . && ogo build --no-inline -o "$STAGE/boot.binary" ./boot)
 rm -f "$STAGE"/*.p2asm
 osize=$(wc -c < "$STAGE/oforth.binary")
 size=$(wc -c < "$STAGE/boot.binary")

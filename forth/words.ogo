@@ -340,7 +340,7 @@ func Init(codeSpace, dataSpace []uint32) {
 		panic("the code space is over 65535 longs")
 	}
 	code = codeSpace
-	data = dataSpace
+	setData(dataSpace)
 	for i := range bucket {
 		bucket[i] = -1
 	}
@@ -530,10 +530,15 @@ func needs(id int) int {
 	return 0
 }
 
-// octo executes the OctoGo word numbered id.
+// octo executes the OctoGo word numbered id: M1's words, the ones compiled
+// code calls most, here, and the later ones in octoLater's switches.
 func octo(id int) {
 	if depth() < needs(id) {
 		abort("stack underflow")
+		return
+	}
+	if id >= oDoes {
+		octoLater(id)
 		return
 	}
 	switch id {
@@ -757,7 +762,7 @@ func octo(id int) {
 	case oAbort:
 		abortQuiet(throwAbort)
 	default:
-		octo2(id)
+		abort("no such OctoGo word")
 	}
 }
 
@@ -824,7 +829,38 @@ func valueOf(k uint8) int {
 	return w
 }
 
-// octo2 executes the OctoGo words of M2.
+// octoLater executes an OctoGo word after M1's. The words are in switches of
+// a run of numbers each, and a word goes straight to its switch from here:
+// handed on from one to the next, a word of a later switch passed every
+// switch before it. A word's constant is written in its set's run, and each
+// run begins at the first word of its switch.
+func octoLater(id int) {
+	switch {
+	case id < oEvaluate:
+		octo2(id)
+	case id < oValue:
+		octo3(id)
+	case id < oIncluded:
+		octo4(id)
+	case id < oRun:
+		octoFile(id)
+	case id < oCatch:
+		octoCog(id)
+	case id < o2Constant:
+		octoException(id)
+	case id < oDashTrailing:
+		octoDouble(id)
+	case id < oQuestion:
+		octoString(id)
+	case id < oExported:
+		octoTools(id)
+	case !runExported(id):
+		abort("no such OctoGo word")
+	}
+}
+
+// octo2 executes DOES> to SIGN, M2's words of defining and of pictured
+// numbers.
 func octo2(id int) {
 	switch id {
 	case oDoes:
@@ -922,6 +958,14 @@ func octo2(id int) {
 		if int32(pop()) < 0 {
 			holdc('-')
 		}
+	default:
+		abort("no such OctoGo word")
+	}
+}
+
+// octo3 executes EVALUATE to ENDCASE, M2's words of input and CASE.
+func octo3(id int) {
+	switch id {
 	case oEvaluate:
 		n := pop()
 		a := pop()
@@ -1040,6 +1084,14 @@ func octo2(id int) {
 			resolve(int(endofs[i]), codeAddr(cp))
 		}
 		nendofs = int(e.leave)
+	default:
+		abort("no such OctoGo word")
+	}
+}
+
+// octo4 executes VALUE to S\", the rest of M2's words.
+func octo4(id int) {
+	switch id {
 	case oValue:
 		v := pop()
 		s := nameOrAbort()
@@ -1245,7 +1297,7 @@ func octo2(id int) {
 		push(uint32(uintptr(unsafe.Pointer(&b[0]))))
 		push(uint32(n))
 	default:
-		octoFile(id)
+		abort("no such OctoGo word")
 	}
 }
 

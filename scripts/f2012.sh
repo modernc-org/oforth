@@ -49,7 +49,7 @@ if [ $sd != filetest.fth ]; then
 	sed 's/S" \(fatest\|FATEST\)/S" sd:\1/' $dir/filetest.fth > $dir/$sd
 	diff $dir/filetest.fth $dir/$sd | grep '^>' || true
 fi
-ogo build -o $dir/oforth.binary .
+ogo build --no-inline -o $dir/oforth.binary .
 # Each file is INCLUDEd by a line of its own, so that an error stops only
 # that file, core.fr's test of ACCEPT taking the line after its own; the
 # lines are all sent at once, and the loader is left when the count of

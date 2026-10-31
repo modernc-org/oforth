@@ -10,6 +10,27 @@ A released section is frozen: it says what that release did, and a later fix
 to the same area is a new entry under **Unreleased**, not an edit to the old
 one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A word OctoGo executes is cheaper to call from compiled code**, `HERE`,
+  `,` and `ALLOT` among them, which a program that builds data at run time
+  calls by the thousand. A word goes straight to the switch that holds it,
+  where it was handed on from one switch to the next, and `ALLOT` and `,`
+  reach the data space without a call. In a loop, at 160 MHz: `HERE` 1,248
+  clocks, against v0.1.0's 1,840; `ALLOT` 1,440 against 2,504; `,` 1,670
+  against 2,824; `KEY?` 1,816 against 5,600. Stanford Trees, which allocates
+  its nodes so, takes 2,960 ms against 3,376, at 200 MHz.
+
+### Toolchain
+
+- **OctoForth is built `--no-inline`**: the scripts, the release and the
+  README's commands. OctoGo inlines small functions unless told not to,
+  which OctoForth has no hub RAM for, and then builds it with every switch a
+  chain of compares, saying nothing; `--no-inline` keeps them tables of
+  jumps, and builds in a third of the time (OCTOGO.md, 1).
+
 ## v0.1.0
 
 The first release, a preview, built and tested with OctoGo v1.0.0-rc.3: its

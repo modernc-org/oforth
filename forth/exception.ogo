@@ -79,7 +79,7 @@ func octoException(id int) {
 			}
 		}
 	default:
-		octoDouble(id)
+		abort("no such OctoGo word")
 	}
 }
 
