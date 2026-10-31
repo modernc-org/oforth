@@ -12,6 +12,18 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
 ## Unreleased
 
+### Added
+
+- **What the benchmarks take of each system's memory**, and the room they
+  leave, in the README beside their clocks, measured by `scripts/size.sh`.
+
+### Changed
+
+- **The benchmark of calls calls**: the empty word of `examples/bench.fth`
+  ends in EXIT, which keeps OctoForth from inlining it. Inlined, it was the
+  empty loop again, 200,132 clocks; called, it takes 6,400,021, against
+  P2XCForth's 13,600,129 and TAQOZ's 9,600,288.
+
 ### Fixed
 
 - **A word OctoGo executes is cheaper to call from compiled code**, `HERE`,

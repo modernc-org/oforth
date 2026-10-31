@@ -31,16 +31,20 @@
 # its prelude, bench/third/prelude-SYSTEM.fth, the words the programs need
 # that it lacks, which are published there to be judged.
 #
-# Usage: scripts/third.sh [-p PROGRAMS] [-s SYSTEMS] [PORT]
+# Usage: scripts/third.sh [-n] [-p PROGRAMS] [-s SYSTEMS] [PORT]
 #
 # PROGRAMS and SYSTEMS are lists in quotes, of sieve bubble matrix fib stan
-# and of oforth p2xc taqoz; all of them by default.
+# and of oforth p2xc taqoz; all of them by default. With -n it only writes
+# the programs as each system is given them, build/third/run/SYSTEM-PROG.fth,
+# which scripts/size.sh takes.
 
 set -eu
 progs="sieve bubble matrix fib stan"
 systems="oforth p2xc taqoz"
+prepare=
 while [ $# -gt 0 ]; do
 	case $1 in
+	-n) prepare=1; shift ;;
 	-p) progs=$2; shift 2 ;;
 	-s) systems=$2; shift 2 ;;
 	*) break ;;
@@ -106,6 +110,7 @@ for name, path in progs.items():
                 print("for p2xc, in %s: %s shortened to 19 characters" % (name, ", ".join(long)))
         open("%s/run/%s-%s.fth" % (d, system, name), "w", encoding="latin-1").write(pre + "\n" + body)
 PY
+[ -z "$prepare" ] || exit 0
 ogo build --no-inline --clock 200MHz -o $dir/oforth.binary .
 wait_port="for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done; fuser -s $port && { echo 'port busy'; exit 1; }"
 for prog in $progs; do

@@ -205,7 +205,16 @@ The files:
   which marks the work with { and } and times it by the host's clock, the
   programs outlasting a 32-bit clock counter. A `\ @TIME name` line before
   a command marks it timed. Never edit `scripts/third.sh` while it runs:
-  sh reads it as it goes. `scripts/p2xc.sh P2XCForthC.zip` builds P2XCForth for the EDGE into
+  sh reads it as it goes. `scripts/size.sh` (the user's yes of
+  2026-10-31, after Christof Eb.'s forum reply asked for code size and
+  free RAM beside the clocks) loads the same programs, `third.sh -n`
+  writing them, and runs nothing: each system says by its own words what
+  is held before and after (OctoForth an empty word's address and
+  UNUSED, P2XCForth `here@` and `lastfree`, TAQOZ HERE, @WORDS and a
+  `long`'s address), twice before, so that what the asking takes comes
+  off. `bench/oforth.fth`'s `call0` ends in EXIT, which keeps it from
+  being inlined (the same day): with no EXIT the row was the empty
+  loop's. `scripts/p2xc.sh P2XCForthC.zip` builds P2XCForth for the EDGE into
   `build/p2xc` with its three printed changes; `scripts/f2012.sh` fetches
   the Forth-2012 suite at a pinned commit into `build/f2012`, checks its
   hashes, and has the REPL INCLUDE it, `build/f2012` served by the
@@ -772,6 +781,7 @@ flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset,
 ogo run --no-inline -9 .        # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
 scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ Reloaded and P2XCForth, two minutes
+scripts/size.sh                 # what the benchmarks take of each system's memory and the room left; nothing timed
 ```
 
 To capture a board run without a terminal, as the siblings do:

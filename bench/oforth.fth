@@ -1,6 +1,8 @@
 \ The benchmarks, OctoForth's dialect: each prints a count of clocks.
 : empty GET-CT 100000 0 DO LOOP GET-CT SWAP - ;
-: call0 ;
+\ call0 ends in EXIT, which keeps it from being inlined: an empty word
+\ with no EXIT is inlined to nothing, and calls would be the empty loop.
+: call0 EXIT ;
 : calls GET-CT 100000 0 DO call0 LOOP GET-CT SWAP - ;
 8192 CONSTANT size
 CREATE flags size ALLOT

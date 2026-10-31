@@ -15,8 +15,11 @@ definition to P2 machine code the moment it is defined: the primitives
 copied in as P2 instructions, literals folded into them, small words
 inlined, a call in tail position made a jump, and loops without calls run
 from cog RAM. On the benchmarks below it runs about three to ten times as
-fast as the P2's other Forths, TAQOZ and P2XCForth, on the same board, and
-its empty loops 16 to 68 times as fast. Its short name, the repository's,
+fast as the P2's other Forths, TAQOZ and P2XCForth, on the same board, an
+empty loop 16 to 36 times as fast, and a call of an empty word 1.5 to 2.1
+times. Its code is the largest of the three and the system itself takes
+206 KB of the hub RAM; it leaves a program about as much room as P2XCForth
+does (below, "What the programs take"). Its short name, the repository's,
 is `oforth`, as OctoGo's is `ogo` and OctoBeam's is `obeam`. It is the
 third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
@@ -356,7 +359,7 @@ v1.0.0-rc.3, `--no-inline` (measured 2026-10-31).
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
 | an empty `DO LOOP`, 100,000 times | 200,132 | 7,200,129 | 3,200,288 |
-| an empty colon word called 100,000 times | 200,132 | 13,600,129 | 9,600,288 |
+| an empty colon word called 100,000 times | 6,400,021 | 13,600,129 | 9,600,288 |
 | the Byte sieve, 8192 flags, one pass | 1,400,057 | 6,390,449 | 13,546,112 |
 | `25 fib`, recursive | 18,080,718 | 53,969,641 | 97,114,008 |
 | `10 fact` 10,000 times, recursive | 15,360,026 | 48,960,129 | 42,800,280 |
@@ -383,13 +386,16 @@ of them being in this repository. Taken as they are:
   as the one its author posted on 2026-04-08. Its timings move by up to a
   tenth with where its words land in memory (its calls took 15,200,129 in
   one build), and its archive of 2025-07-11 ran within that.
-- OctoForth inlines the empty word, so the second row is its loop
-  alone, which runs from cog RAM by REP, 2 clocks an iteration, the
-  increment of its index; `fib` and `fact`,
-  recursive, measure its calls (34 clocks a call and return, 8 more for the
-  frame). Its timings, too, move by a few percent with where code lands, a
-  taken branch in hub RAM costing 13 to 20 clocks with its target's place:
-  `fact` took 14,560,026 in another build.
+- OctoForth's empty loop runs from cog RAM by REP, 2 clocks an iteration,
+  the increment of its index. Its empty word ends in EXIT, which keeps it
+  from being inlined: with no EXIT it is inlined to nothing, and the row
+  is the empty loop's 200,132 again. Called, it takes 64 clocks an
+  iteration: 34 the call and return, 8 the return address kept on the
+  return stack, and the rest the loop, which a call keeps in hub RAM.
+  `fib` and `fact`, recursive, measure its calls too. Its timings, too,
+  move by a few percent with where code lands, a taken branch in hub RAM
+  costing 13 to 20 clocks with its target's place: `fact` took 14,560,026
+  in another build.
 
 ## Third parties' benchmarks
 
@@ -440,6 +446,49 @@ about 69 KB, do not fit the 62 KB of room it has. Every program that ran
 gave its expected answer, and each Stanford one passed its own check.
 The host's clock ticks every 16 ms, so a Stanford time moves by a tick or
 two from run to run, and by up to 5% with where the code lands.
+
+## What the programs take
+
+`scripts/size.sh` loads the same programs again, as the two scripts above
+give them, runs nothing, and asks each system by its own words what it
+holds before a program and after it, in bytes. The asking takes up to 140
+bytes, which come off the counts but not off the room at start. A prelude
+is not counted, nor what a program allots while it runs, as Stanford Trees
+does. The three keep their memory differently, so the columns count
+different things:
+
+- OctoForth's binary is 505,452 bytes of the hub's 524,288. Of that, 288 KB
+  are the two spaces it compiles into, 128 KB for code and 160 KB for data;
+  the system itself is the other 210,540. Its headers are in tables of
+  their own, room for 1024 headers and 12 KB of names, and are not
+  counted here.
+- P2XCForth's binary is 386,796 bytes, 300,000 of them its one memory for
+  code, headers and data, the last 32 KB of which are its block buffer. Its
+  room at start is after its author's words, which the scripts load first.
+- TAQOZ's image is 131,072 bytes, with a room of 62 KB inside it: code
+  grows up into it, and a CREATE's data with it (as the prelude makes
+  CREATE), and names grow down. Its variables have a small area of their
+  own, counted with the rest. The sieve of bench/ keeps its flags at a
+  fixed address in the room, which is not counted.
+
+| | OctoForth code | OctoForth data | P2XCForth | TAQOZ |
+| --- | --- | --- | --- | --- |
+| the room at start | 126,176 | 163,824 | 283,168 | 62,282 |
+| bench/'s five | 1,268 | 8,192 | 669 | 321 |
+| Ertl: sieve | 732 | 8,196 | does not run | 8,372 |
+| Ertl: bubble sort | 1,896 | 24,038 | 25,008 | 24,538 |
+| Ertl: matrix multiply | 1,304 | 49,156 | 49,985 | 49,594 |
+| Ertl: fib | 144 | 0 | 121 | 51 |
+| Stanford, all eight | 22,468 | 68,787 | does not load | does not fit |
+
+OctoForth's code is the largest of the three. A call is a long, and a
+primitive copied in is one to three longs, `DUP` one and `*` three, where
+a call in TAQOZ is a 16-bit wordcode and in P2XCForth a bytecode and the
+word's address, five bytes. Ertl's fib, which allots nothing, is 144
+bytes on OctoForth, 121 on P2XCForth, its header counted, and 51 on
+TAQOZ, its name counted. Its room, in two spaces, is about P2XCForth's in
+all and over four times TAQOZ's, which is where Stanford's 68,787 bytes of
+data fit.
 
 ## How it works
 
@@ -544,6 +593,7 @@ scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an imag
 scripts/flash.sh                # boot/ into the board's flash, then a reset and a check that it answers
 scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ and P2XCForth
 scripts/third.sh                # the third parties' benchmarks
+scripts/size.sh                 # what they take of each system's memory
 ```
 
 A release: a section in `CHANGELOG.md`, commit, `git tag -a vX.Y.Z`, then
