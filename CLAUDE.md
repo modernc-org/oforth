@@ -379,9 +379,11 @@ version` and the clock they were taken at, never from the estimates.
   shared with the ogo, p2-11 and obeam sessions. Its flash, a W25Q128
   (JEDEC ID EF 70 18, 16 MB), holds OctoForth since 2026-10-30, written
   by `scripts/flash.sh` (`ogo loadp2 -FLASH`, the loader's boot stub at
-  0 and the image from $400), since 2026-10-31 v0.1.0's `boot.binary`,
-  from `scripts/release.sh`'s run on the commit before the tag, the same
-  code, its banner "OctoForth v0.1.0, ...": the board boots it after a reset with no
+  0 and the image from $400), since 2026-11-01 `boot/` of 5be5570, the
+  console ring's fix, an untagged build, 506,692 bytes (sha256
+  0b0f94f7...), its banner "OctoForth, a native-code Forth for the P2"
+  with no version (from 2026-10-31 v0.1.0's `boot.binary`, its banner
+  "OctoForth v0.1.0, ..."): the board boots it after a reset with no
   loader, its banner at 230400 baud half a second after the reset,
   which `scripts/boot.py` reads. The loader's `-FLASH` must keep its
   terminal open until the banner: without `-t` it closes the port as
