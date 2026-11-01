@@ -44,6 +44,7 @@ var throwCodes = [...]struct {
 	{"pictured number too long", 0xffffffef},     // -17
 	{"bad name", 0xffffffed},                     // -19, a name too long
 	{"unbalanced control structure", 0xffffffea}, // -22
+	{"input lost: it came too fast", 0xffffffc7}, // -57, in receiving a character
 }
 
 func throwCode(s string) uint32 {

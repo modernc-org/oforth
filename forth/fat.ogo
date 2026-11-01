@@ -407,6 +407,11 @@ func dirEntry(clus, i uint32) (int, bool) {
 	return int(i%16) * 32, secLoad(clusBlock(clus) + i/16)
 }
 
+// dirClus counts the clusters a walk of a directory went past, which every
+// walk sets to 0 first. A directory has 65,536 entries at most, FAT's
+// limit, 4096>>volShift clusters, which a chain that loops passes.
+var dirClus uint32
+
 // dirNext answers the entry after the i-th of cluster clus in its directory,
 // and 1, or the same entry and 0 at the end of the directory's chain, or -1.
 func dirNext(clus, i uint32) (uint32, uint32, int) {
@@ -420,6 +425,10 @@ func dirNext(clus, i uint32) (uint32, uint32, int) {
 	case n == 0:
 		return clus, i - 1, 0
 	}
+	if dirClus++; dirClus >= 4096>>volShift {
+		setNineErr("the card's FAT is damaged")
+		return clus, i - 1, -1
+	}
 	return n, 0, 1
 }
 
@@ -431,6 +440,7 @@ var lfnAt = [13]uint8{1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30}
 // -1.
 func dirFind(dir uint32, name []byte) int {
 	clus, i := dir, uint32(0)
+	dirClus = 0
 	fromC, fromI := clus, i
 	ord, n := 0, 0 // the part of a long name expected next, and how many came
 	sum := byte(0)
@@ -755,6 +765,7 @@ func aliasChar(c byte) byte {
 // 0 if not, or -1.
 func dirShort(dir uint32) int {
 	clus, i := dir, uint32(0)
+	dirClus = 0
 	for {
 		o, ok := dirEntry(clus, i)
 		if !ok {
@@ -804,6 +815,7 @@ func dirAdd(dir uint32, name []byte) bool {
 
 	// n+1 free entries in a row, a new cluster of the directory if need be.
 	clus, i := dir, uint32(0)
+	dirClus = 0
 	sc, si := clus, i
 	for run := 0; ; {
 		o, ok := dirEntry(clus, i)
@@ -825,16 +837,22 @@ func dirAdd(dir uint32, name []byte) bool {
 		case -1:
 			return false
 		case 0:
+			if dirClus+1 >= 4096>>volShift {
+				setNineErr("the directory is full")
+				return false
+			}
 			c, ok := clusAlloc(clus)
 			if !ok || !clusZero(c) {
 				return false
 			}
 			clus, i = c, 0
+			dirClus++
 		}
 	}
 
 	// The long name's entries, its last part first.
 	clus, i = sc, si
+	dirClus = 0
 	for k := n; k >= 1; k-- {
 		o, ok := dirEntry(clus, i)
 		if !ok {
@@ -876,6 +894,7 @@ func dirAdd(dir uint32, name []byte) bool {
 // dirDel marks n entries from p deleted.
 func dirDel(p dirPos, n int) bool {
 	clus, i := p.clus, p.i
+	dirClus = 0
 	for {
 		o, ok := dirEntry(clus, i)
 		if !ok {

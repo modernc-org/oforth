@@ -7,7 +7,7 @@
 # EXCEPTION, DOUBLE, STRING and TOOLS word sets (Gerry Jackson's suite, after John Hayes' tests) on the board:
 # the REPL INCLUDEs the suite's files from build/f2012, which the loader
 # serves by 9P, and the script prints what failed and the tester's count of
-# errors, which must be 0. The suite is fetched at a pinned commit into
+# errors, and fails unless the count came, 0, and nothing else did. The suite is fetched at a pinned commit into
 # build/f2012, checked by its hashes, and never committed: its files carry
 # their own notices. It takes the board lock itself; the run takes about
 # half a minute. With -sd, the FILE tests run on the SD card in the slot
@@ -70,4 +70,12 @@ tr -d '\r' < $dir/raw.txt > $dir/out.txt
 # CORE-EXT-ERRORS, FILE-ERRORS and the like are the suite's
 # errorreport.fth's, which is not loaded.
 grep -a 'errors:\|INCORRECT RESULT: T\|WRONG NUMBER OF RESULTS: T\| ?$\|error:\|: No such' $dir/out.txt |
-	grep -a -v '[A-Z-]*-ERRORS ?$'
+	grep -a -v '[A-Z-]*-ERRORS ?$' > $dir/report.txt || true
+cat $dir/report.txt
+# A clean run prints the line that asked for the count and the count, 0.
+pass='^errors: 0  ok$'
+if ! grep -a -q "$pass" $dir/report.txt ||
+	grep -a -v -e "$pass" -e '^DECIMAL CR \.( errors: ) #ERRORS @ \. $' $dir/report.txt > /dev/null; then
+	echo "$0: FAIL" >&2
+	exit 1
+fi

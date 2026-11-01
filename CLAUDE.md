@@ -619,7 +619,13 @@ All measured or read in this session and recorded with their sources in
   offset in `sec` (`sec2`, `sec4`, unaligned, which the P2 reads), and it
   is still about 20 KB, 27 KB of hub RAM with its data. The pins are
   P58-P61, the flash's too: the card's traffic never gives the flash a
-  whole byte (sd.ogo's header comment). `TestCard` runs on the card in
+  whole byte (sd.ogo's header comment). A walk of a directory counts
+  the clusters it goes past (`dirClus`, set to 0 by every walk) and
+  stops at FAT's limit of 65,536 entries a directory, which a chain that
+  loops passes, the other walks being bounded already (`clusFree` by
+  the volume's clusters, a file's by the offset sought); `dirAdd` grows
+  no directory past it. `TestDirLoop` walks a FAT made up in the FAT's
+  cache, before `TestCard` mounts the card. `TestCard` runs on the card in
   the slot, passing with a note when the slot is empty. `CardRead`, the
   one exported function, reads a block, for `scripts/carddump`, whose
   directory walk is its own and not fat.ogo's, which it checks; the walk
@@ -731,7 +737,15 @@ All measured or read in this session and recorded with their sources in
   at most, `needs` answering `in`; `octoCog`'s default runs it
   (`runExported`). f takes its arguments by `Pop` and gives its results
   by `Push`. `Serial` is the console `main.ogo` had: Console, `Key` and
-  `Avail` over a ring a goroutine fills by `p2.ReadByte`. `TestDefine`.
+  `Avail` over a ring a goroutine fills by `p2.ReadByte` (`ringPut`); the
+  ring full, what comes is dropped until the REPL has taken what it held
+  and the input has paused a tenth of a second, and `serialKey` then
+  answers a CR and sets `inputLost`, which `line` makes the line's error,
+  "input lost: it came too fast", -57 (`lostInput`): the REPL echoes and
+  says ok at the line's speed, so an unpaced paste overran the ring after
+  some 800 lines, 2,132 of `1+` (seen on the board 2026-11-01, after an
+  outside review said the ring had no check).
+  `TestDefine`, `TestRing`.
   `Quit` returns after BYE, and `Exit(status)` writes the loader's exit
   sequence, $FF $00 and the status, which ends `ogo run`'s terminal (not
   `ogo loadp2 -t`'s, which does not look for it); the two mains call it
@@ -795,7 +809,7 @@ flock -w 900 /tmp/p2-board.lock ogo test -run TestEncoder ./forth
 ogo test -c ./forth             # build the tests only, no board
 ogo build -o m0.binary ./probe/m0                # the probe
 flock -w 900 /tmp/p2-board.lock ogo run --no-inline ./example # M3's embedding demo
-scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS tests on the board, INCLUDEd by 9P, a minute; errors: 0
+scripts/f2012.sh                # the Forth-2012 CORE, CORE EXT, FILE, EXCEPTION, DOUBLE, STRING and TOOLS tests on the board, INCLUDEd by 9P, a minute; errors: 0, and it exits 1 unless so
 scripts/f2012.sh -sd            # the same, filetest.fth on the SD card in the slot instead of the host's directory
 scripts/cardcheck.sh            # fsck.fat -n of the card's volume, from an image of its blocks in use; after any change of fat.ogo
 scripts/flash.sh                # boot/ into the board's flash, booted at every reset with no loader; checked by scripts/boot.py

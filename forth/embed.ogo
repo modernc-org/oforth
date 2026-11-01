@@ -77,21 +77,60 @@ func Serial() {
 // ringN must be a power of two.
 const ringN = 4096
 
+// The ring holds what came and was not taken yet. Source pasted with no
+// pause between its lines fills it even when nothing runs for long: the
+// REPL echoes every byte and says ok after every line, at the speed the
+// bytes come, and falls five bytes behind a line. When it is full, what
+// comes is dropped, and so is all that comes after it until the REPL has
+// taken what the ring held and the input has paused (serialKey): the lines
+// before the gap are interpreted, none after it, and the line the gap cut
+// is an error (inputLost).
 var (
 	ring  [ringN]byte
-	rhead int // written by the reader only
-	rtail int // written by the REPL only
+	rhead int  // written by the reader only
+	rtail int  // written by the REPL only
+	lost  bool // set by the reader when the ring is full, cleared by the REPL when it is empty
+	nlost int  // the bytes dropped, written by the reader only
+
+	// inputLost is set when the console's input lost bytes, and line
+	// makes it the line's error.
+	inputLost bool
 )
 
 func reader() {
 	for {
-		ring[rhead&(ringN-1)] = byte(p2.ReadByte(0))
+		ringPut(byte(p2.ReadByte(0)))
+	}
+}
+
+// ringPut puts c in the ring, or drops it.
+func ringPut(c byte) {
+	switch {
+	case lost:
+		nlost++
+	case rhead-rtail == ringN:
+		lost = true
+		nlost++
+	default:
+		ring[rhead&(ringN-1)] = c
 		rhead++
 	}
 }
 
+// serialKey answers the next byte the ring holds. At a gap, all before it
+// having been taken, it waits until no byte has come for a tenth of a
+// second, sets inputLost and answers a CR, which ends the line.
 func serialKey() int {
 	for rtail == rhead {
+		if lost {
+			for n := -1; n != nlost; {
+				n = nlost
+				p2.WaitMs(100)
+			}
+			lost = false
+			inputLost = true
+			return '\r'
+		}
 	}
 	c := ring[rtail&(ringN-1)]
 	rtail++

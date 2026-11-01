@@ -53,6 +53,22 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
   chain of compares, saying nothing; `--no-inline` keeps them tables of
   jumps, and builds in a third of the time (OCTOGO.md, 1).
 
+### Fixed
+
+- **Source pasted faster than the REPL takes it is no longer garbled**: the
+  REPL echoes every byte and says ok after every line at the serial line's
+  speed, so a paste with no pause between its lines fell behind by about
+  five bytes a line, and past some 800 lines, or more short ones, it ran
+  over the console's ring of 4 KB, which then gave lines twice or out of
+  order, saying nothing (3,000 lines of `1+` gave 2,992, a stray `+` and
+  the last line twice). Now the lines before the gap are interpreted, the
+  rest of the paste is dropped, and the line the gap cut is an error,
+  `input lost: it came too fast`, THROW code -57.
+- **A directory whose chain of clusters loops**, on a damaged card, ends a
+  walk at FAT's limit of 65,536 entries a directory with "the card's FAT
+  is damaged", where it was walked for ever; a directory is not grown past
+  the limit ("the directory is full").
+
 ## v0.1.0
 
 The first release, a preview, built and tested with OctoGo v1.0.0-rc.3: its

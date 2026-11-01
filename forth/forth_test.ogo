@@ -1075,6 +1075,73 @@ func TestFile(t *testing.T) {
 	Avail = nil
 }
 
+// TestRing fills the console's ring past its room, as source pasted faster
+// than the REPL takes it does, with no serial line: what the ring held
+// comes in order, then a CR, and the line the gap ends is an error, which
+// takes back the definition in progress; what comes after it is kept.
+func TestRing(t *testing.T) {
+	check(t, ": t30 1", "")
+	for i := 0; i < ringN+100; i++ {
+		ringPut(byte(i))
+	}
+	bad := 0
+	for i := 0; i < ringN; i++ {
+		if serialKey() != i&0xff {
+			bad++
+		}
+	}
+	if c := serialKey(); bad != 0 || c != '\r' || !inputLost || lost || nlost != 100 {
+		printf("ring: %d bytes wrong, then %d, %d lost\n", bad, c, nlost)
+		t.Fail()
+	}
+	check(t, "2 ;", "error: input lost: it came too fast\n")
+	check(t, "t30", "t30 ?\n")
+	ringPut('x')
+	if c := serialKey(); c != 'x' || inputLost {
+		printf("after the gap: %d\n", c)
+		t.Fail()
+	}
+	nlost = 0
+}
+
+// TestDirLoop walks directories in a FAT made up in the FAT's cache,
+// nothing being read from the card or written to it: one of two clusters,
+// and one whose chain loops, which the walk leaves at FAT's 65,536 entries
+// a directory. It runs while no card is mounted, before TestCard.
+func TestDirLoop(t *testing.T) {
+	if volUp || fatDirty {
+		println("a card is mounted, and nothing tested")
+		return
+	}
+	clus0, shift0 := volClus, volShift
+	volClus, volShift = 100, 3
+	fatAt, fatValid = 0, true
+	fatBlk[3], fatBlk[4] = 4, fatMask
+	if n, r := dirWalk(3); n != 256 || r != 0 {
+		printf("two clusters: %d entries, %d\n", n, r)
+		t.Fail()
+	}
+	fatBlk[4] = 3
+	if n, r := dirWalk(3); n != 65536 || r != -1 || string(nineErr[:nnineErr]) != "the card's FAT is damaged" {
+		printf("a loop: %d entries, %d\n", n, r)
+		t.Fail()
+	}
+	fatValid, nnineErr, dirClus = false, 0, 0
+	volClus, volShift = clus0, shift0
+}
+
+// dirWalk walks a directory from its first cluster c to its end, and
+// answers how many times it asked dirNext and its last answer.
+func dirWalk(c uint32) (int, int) {
+	dirClus = 0
+	clus, i, r, n := c, uint32(0), 1, 0
+	for r == 1 && n < 100000 {
+		clus, i, r = dirNext(clus, i)
+		n++
+	}
+	return n, r
+}
+
 // TestCard runs the file words on the SD card in the slot, in files of its
 // own, which it deletes. A board with no card in the slot passes, saying
 // that nothing was tested.

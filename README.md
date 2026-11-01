@@ -105,7 +105,13 @@ SEE sq sq is a colon definition
 
 `SEE` shows a word's machine code as the words it was compiled from.
 Names are found regardless of case, and a cell is 32 bits. Pasted source
-works: a cog of its own reads the serial line.
+works: a cog of its own reads the serial line into a ring of 4 KB. The REPL
+echoes what comes and says ok after every line, at the line's own speed, so
+it falls behind a paste with no pause between its lines, by about five
+bytes a line: some 800 lines are taken whole, more if they are short, fewer
+if they take time to run. A longer paste is cut where the ring ran over,
+with `error: input lost: it came too fast`, the lines before it
+interpreted and none after it. INCLUDE takes a file of any length.
 
 ### The host's files
 

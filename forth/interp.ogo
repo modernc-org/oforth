@@ -398,12 +398,16 @@ func line() bool {
 	nmore = 0
 	nwhere = 0
 	fromTib()
-	if n := skipping; n > 0 {
-		skipping = 0
-		skipIf(n)
+	lostInput()
+	if !aborted {
+		if n := skipping; n > 0 {
+			skipping = 0
+			skipIf(n)
+		}
+		interpret()
+		checkStacks()
+		lostInput()
 	}
-	interpret()
-	checkStacks()
 	if !aborted {
 		return true
 	}
@@ -424,6 +428,15 @@ func line() bool {
 	}
 	reset()
 	return false
+}
+
+// lostInput makes it an error that the console's input lost bytes
+// (embed.ogo) while the line was read, or while it ran.
+func lostInput() {
+	if inputLost {
+		inputLost = false
+		abort("input lost: it came too fast")
+	}
 }
 
 // evaluate interprets n bytes at a, the input source being restored after.
