@@ -155,7 +155,10 @@ That was so, and the README's 62 KB for TAQOZ and its "Stanford does not
 fit" were wrong, the prelude's CREATE having put TAQOZ's arrays in its
 code space. Of fixing the text alone or measuring again, the user chose
 that day to measure again, before an answer: TAQOZ's arrays in its data
-space, Ertl's four timed again and the sizes measured again. `.github/FUNDING.yml` is ogo's.
+space, Ertl's four timed again and the sizes measured again (1e98ac0).
+The answer, drafted here and posted by the user that day, said he was
+right, what changed, and why Stanford still does not load on TAQOZ.
+`.github/FUNDING.yml` is ogo's.
 
 The files:
 
