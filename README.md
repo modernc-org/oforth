@@ -19,8 +19,9 @@ fast as the P2's other Forths, TAQOZ and P2XCForth, on the same board, an
 empty loop 16 to 36 times as fast, and a call of an empty word 1.5 to 2.1
 times. Its code is the largest of the three and the system itself takes
 206 KB of the hub RAM; it leaves a program about as much room as P2XCForth
-does (below, "What the programs take"). Its short name, the repository's,
-is `oforth`, as OctoGo's is `ogo` and OctoBeam's is `obeam`. It is the
+does, and less than TAQOZ (below, "What the programs take"). Its short
+name, the repository's, is `oforth`, as OctoGo's is `ogo` and OctoBeam's
+is `obeam`. It is the
 third program of size in OctoGo, after
 [p2-11](https://gitlab.com/cznic/p2-11), a PDP-11/40 that runs Unix V6, and
 [OctoBeam](https://gitlab.com/cznic/obeam), a BEAM for Erlang and Elixir.
@@ -374,9 +375,9 @@ of them being in this repository. Taken as they are:
   200 MHz, which `scripts/taqoz.sh` fetches and the scripts load into hub
   RAM; booted from the board's flash, where it was until OctoForth went
   there, it took the same clocks. Its empty loop takes the 32 clocks an
-  iteration its documentation gives. Its sieve array is at a fixed hub
-  address in its free room, its data space having no room for 8 KB, and is
-  named `fl`, TAQOZ having a FLAGS of its own.
+  iteration its documentation gives. Its sieve array is in its data space,
+  which `org` puts just above its image, and is named `fl`, TAQOZ having a
+  FLAGS of its own.
 - P2XCForth is P2XCForthD, its author's newest, of 2026-04-07, attached to
   his forum post (the project has no repository), built for the P2-EDGE by
   `scripts/p2xc.sh` with four changes, which the script prints: the EDGE's
@@ -408,15 +409,16 @@ Gforth's manual compares with too), and the Stanford integer benchmarks
 John Hennessy gathered, in Martin Fraeman's Forth of 1989. Every system
 runs at 200 MHz, timed by the host between two marks the system writes
 around the work, in milliseconds; fewer is faster. OctoForth is built by
-OctoGo v1.0.0-rc.3, `--no-inline` (measured 2026-10-31).
+OctoGo v1.0.0-rc.3, `--no-inline` (measured 2026-10-31; TAQOZ's column
+again on 2026-11-01, its arrays in its data space).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| Ertl: sieve, 1000 times | 5,503 | does not run | 34,380 |
+| Ertl: sieve, 1000 times | 5,503 | does not run | 34,348 |
 | Ertl: bubble sort, 6000 | 10,175 | 82,959 | 78,263 |
-| Ertl: matrix multiply, 64 by 64 | 208 | 1,288 | 1,168 |
-| Ertl: `34 fib` | 7,743 | 23,477 | 42,075 |
-| Stanford Perm, 10 times | 768 | does not load | does not fit |
+| Ertl: matrix multiply, 64 by 64 | 208 | 1,288 | 1,152 |
+| Ertl: `34 fib` | 7,743 | 23,477 | 42,811 |
+| Stanford Perm, 10 times | 768 | does not load | does not load |
 | Stanford Towers | 1,393 | | |
 | Stanford Queens | 704 | | |
 | Stanford Intmm | 1,664 | | |
@@ -438,14 +440,18 @@ Fraeman's SC32 kernel; for P2XCForth, after its author's own block words
 taken from his archive at run time, plain colon definitions of the ANS
 words it lacks, `2@` and `2!` among
 them, which costs it in bubble sort; for TAQOZ its ANS words under TAQOZ's
-names, and a CREATE whose data is TAQOZ's code space, its own CREATE giving
-none, with `2@` and `2!` again colon definitions. Ertl's sieve does not run
+names, its data space moved above its image, with a CREATE and an ALLOT of
+that space, TAQOZ's own being of its code space, and `2@` and `2!` again
+colon definitions. Ertl's sieve does not run
 on P2XCForth, whose `+LOOP` ends only when the index equals the limit, and
-Fraeman's file does not load there, lacking DOES>; on TAQOZ his arrays,
-about 69 KB, do not fit the 62 KB of room it has. Every program that ran
+Fraeman's file does not load there, lacking DOES>, nor on TAQOZ: his
+defining words are colon definitions that run CREATE when they run, and
+TAQOZ, which compiles a whole line before it runs any of it, runs CREATE
+when it compiles them. Every program that ran
 gave its expected answer, and each Stanford one passed its own check.
 The host's clock ticks every 16 ms, so a Stanford time moves by a tick or
-two from run to run, and by up to 5% with where the code lands.
+two from run to run, and by up to 5% with where the code lands: TAQOZ's
+`34 fib`, which has no array, took 42,075 before its prelude grew.
 
 ## What the programs take
 
@@ -465,30 +471,33 @@ different things:
 - P2XCForth's binary is 386,796 bytes, 300,000 of them its one memory for
   code, headers and data, the last 32 KB of which are its block buffer. Its
   room at start is after its author's words, which the scripts load first.
-- TAQOZ's image is 131,072 bytes, with a room of 62 KB inside it: code
-  grows up into it, and a CREATE's data with it (as the prelude makes
-  CREATE), and names grow down. Its variables have a small area of their
-  own, counted with the rest. The sieve of bench/ keeps its flags at a
-  fixed address in the room, which is not counted.
+- TAQOZ's image is 131,072 bytes. Inside it its code grows up and its
+  names down, with 62 KB between them; its code column counts both. Its
+  data, the variables and the arrays, is in a data space of its own, which
+  `org` puts anywhere in the hub RAM: the prelude and bench/ put it just
+  above the image, where there are 385,024 bytes up to its buffers at
+  $7E000.
 
-| | OctoForth code | OctoForth data | P2XCForth | TAQOZ |
-| --- | --- | --- | --- | --- |
-| the room at start | 126,176 | 163,824 | 283,168 | 62,282 |
-| bench/'s five | 1,268 | 8,192 | 669 | 321 |
-| Ertl: sieve | 732 | 8,196 | does not run | 8,372 |
-| Ertl: bubble sort | 1,896 | 24,038 | 25,008 | 24,538 |
-| Ertl: matrix multiply | 1,304 | 49,156 | 49,985 | 49,594 |
-| Ertl: fib | 144 | 0 | 121 | 51 |
-| Stanford, all eight | 22,468 | 68,787 | does not load | does not fit |
+| | OctoForth code | OctoForth data | P2XCForth | TAQOZ code | TAQOZ data |
+| --- | --- | --- | --- | --- | --- |
+| the room at start | 126,176 | 163,824 | 283,168 | 62,278 | 385,020 |
+| bench/'s five | 1,268 | 8,192 | 669 | 321 | 8,192 |
+| Ertl: sieve | 732 | 8,196 | does not run | 170 | 8,194 |
+| Ertl: bubble sort | 1,896 | 24,038 | 25,008 | 497 | 24,004 |
+| Ertl: matrix multiply | 1,304 | 49,156 | 49,985 | 402 | 49,156 |
+| Ertl: fib | 144 | 0 | 121 | 51 | 0 |
+| Stanford, all eight | 22,468 | 68,787 | does not load | does not load | |
 
 OctoForth's code is the largest of the three. A call is a long, and a
 primitive copied in is one to three longs, `DUP` one and `*` three, where
 a call in TAQOZ is a 16-bit wordcode and in P2XCForth a bytecode and the
 word's address, five bytes. Ertl's fib, which allots nothing, is 144
 bytes on OctoForth, 121 on P2XCForth, its header counted, and 51 on
-TAQOZ, its name counted. Its room, in two spaces, is about P2XCForth's in
-all and over four times TAQOZ's, which is where Stanford's 68,787 bytes of
-data fit.
+TAQOZ, its name counted; his sieve's code is 732 bytes on OctoForth and
+170 on TAQOZ. TAQOZ leaves a program the most room of the three, 62 KB for
+code and names and 385 KB for data. OctoForth's two spaces hold about as
+much as P2XCForth's one memory, enough for Stanford's 68,787 bytes of
+data.
 
 ## How it works
 

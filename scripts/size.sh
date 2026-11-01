@@ -20,12 +20,13 @@
 #     are in tables of their own, outside both spaces, and not counted.
 #   - P2XCForth: its one memory, code, headers and data, by here@, and the
 #     room up to its own lastfree.
-#   - TAQOZ Reloaded: its code, by HERE, which a CREATE's data is part of
-#     (bench/third/prelude-taqoz.fth); its names, by @WORDS, which grow down
-#     towards the code, the room being between the two; and its variables'
-#     own area, by the address of a long defined there and then. The sieve
-#     of bench/taqoz.fth keeps its flags at a fixed address in the room,
-#     which this does not see.
+#   - TAQOZ Reloaded: its code, by HERE; its names, by @WORDS, which grow
+#     down towards the code, the code's room being between the two; and its
+#     data space, where the variables, the arrays and CREATE's and ALLOT's
+#     data are, by the address of a long defined there and then, the room
+#     being up to TAQOZ's buffers, BUFFERS. The data space is moved first,
+#     above the image (bench/third/prelude-taqoz.fth, bench/taqoz.fth), and
+#     asked after that.
 #
 # It prints a line for each program on each system, in bytes. It takes the
 # board lock for each run; all of them take about five minutes.
@@ -54,8 +55,8 @@ probe = {
              " 32 emit . 32 emit . ;",
              ["here@ lastfree @ szz."]),
     "taqoz": (": SZZ. CR 64 EMIT 83 EMIT 90 EMIT 64 EMIT"
-              " SPACE . SPACE . SPACE . ;",
-              ["long zd#", "HERE @WORDS zd# SZZ."]),
+              " SPACE . SPACE . SPACE . SPACE . ;",
+              ["long zd#", "HERE @WORDS zd# BUFFERS SZZ."]),
 }
 
 def strip_timed(s):
@@ -88,7 +89,14 @@ for system in ("oforth", "p2xc", "taqoz"):
         if not os.path.exists("build/p2xc/author.fth"):
             continue
         pre = read("build/p2xc/author.fth")
-    write(system, "bench", pre, read("bench/%s.fth" % system))
+    body = read("bench/%s.fth" % system)
+    if system == "taqoz":
+        # bench/taqoz.fth moves the data space first, which goes before
+        # the asking, as the prelude does for the third parties' programs.
+        org = "$20000 org\n"
+        assert body.count(org) == 1
+        pre, body = org.strip(), body.replace(org, "")
+    write(system, "bench", pre, body)
     for prog in ("sieve", "bubble", "matrix", "fib", "stan"):
         # The programs that run there, as scripts/third.sh says.
         if (system, prog) in (("p2xc", "sieve"), ("p2xc", "stan"),
@@ -123,7 +131,7 @@ for log in sorted(glob.glob(d + "/log/*.txt")):
     run = os.path.basename(log)[:-4]
     system, prog = run.split("-", 1)
     s = open(log, "rb").read().decode("latin-1")
-    n = 2 if system == "p2xc" else 3
+    n = {"oforth": 3, "p2xc": 2, "taqoz": 4}[system]
     got = [[int(x) for x in m.groups()]
            for m in re.finditer(r"@SZ@" + r"\s+(-?\d+)" * n, s)]
     if len(got) != 3:
@@ -141,11 +149,11 @@ for log in sorted(glob.glob(d + "/log/*.txt")):
         print("%-6s %-6s all %6d  room %6d" % (
             system, prog, c[1] - b[1] - (b[1] - a[1]), c[0] - c[1]))
     else:
-        # the long's address, @WORDS, HERE
-        over_c, over_n, over_v = b[2] - a[2], a[1] - b[1], b[0] - a[0]
-        print("%-6s %-6s code %6d names %6d variables %6d  room %6d" % (
-            system, prog, c[2] - b[2] - over_c, b[1] - c[1] - over_n,
-            c[0] - b[0] - over_v, c[1] - c[2]))
+        # BUFFERS, the long's address, @WORDS, HERE
+        over_c, over_n, over_d = b[3] - a[3], a[2] - b[2], b[1] - a[1]
+        print("%-6s %-6s code %6d names %6d data %6d  room: code %6d data %6d" % (
+            system, prog, c[3] - b[3] - over_c, b[2] - c[2] - over_n,
+            c[1] - b[1] - over_d, c[2] - c[3], c[0] - c[1] - 4))
     if prog == "bench":
         if system == "oforth":
             print("%-13s room at start: code %6d data %6d" % (
@@ -154,5 +162,6 @@ for log in sorted(glob.glob(d + "/log/*.txt")):
             print("%-13s room at start, after author.fth: %6d" % (
                 system, a[0] - a[1]))
         else:
-            print("%-13s room at start: %6d" % (system, a[1] - a[2]))
+            print("%-13s room at start: code %6d data %6d" % (
+                system, a[2] - a[3], a[0] - a[1] - 4))
 PY

@@ -19,7 +19,7 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
 ### Changed
 
-- **The benchmark of calls calls**: the empty word of `examples/bench.fth`
+- **The benchmark of calls calls**: the empty word of `bench/oforth.fth`
   ends in EXIT, which keeps OctoForth from inlining it. Inlined, it was the
   empty loop again, 200,132 clocks; called, it takes 6,400,021, against
   P2XCForth's 13,600,129 and TAQOZ's 9,600,288.
@@ -34,6 +34,16 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
   clocks, against v0.1.0's 1,840; `ALLOT` 1,440 against 2,504; `,` 1,670
   against 2,824; `KEY?` 1,816 against 5,600. Stanford Trees, which allocates
   its nodes so, takes 2,960 ms against 3,376, at 200 MHz.
+- **TAQOZ's arrays are in its data space** in the benchmarks: the prelude of
+  the third parties' programs and `bench/taqoz.fth` put TAQOZ Reloaded's
+  arrays and variables in the data space it keeps apart from its code,
+  which `org` puts above its image, with 385,024 bytes up to its buffers.
+  They were in its code space, by the prelude's CREATE, or at a fixed
+  address there, and the README said that Fraeman's Stanford suite did not
+  fit TAQOZ's 62 KB of room; it does not load there, for its defining
+  words. The README's table of what the programs take has TAQOZ's code and
+  data apart. Its clocks are what they were, to the clock in `bench/` and
+  within 2% in Ertl's four, with where its code lands.
 
 ### Toolchain
 

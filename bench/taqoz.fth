@@ -2,11 +2,12 @@
 : call0 ;
 : calls CNT@ 100000 0 DO call0 LOOP CNT@ SWAP - ;
 8192 := sz
-\ TAQOZ Reloaded's data space has no room for 8 KB: the flags are at $D000,
-\ in the room its boot report gives between its code and its names, a
-\ constant, so a literal. TAQOZ has a FLAGS of its own, which a := of the
-\ same name breaks, so the sieve's array is fl here, and its size sz.
-$D000 := fl
+\ The sieve's flags are in TAQOZ Reloaded's data space, which org puts just
+\ above its image, as bench/third/prelude-taqoz.fth does, and bytes makes
+\ the array there. TAQOZ has a FLAGS of its own, which a := of the same name
+\ breaks, so the array is fl here, and its size sz.
+$20000 org
+sz bytes fl
 : do-prime
    fl sz 1 FILL
    0

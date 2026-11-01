@@ -960,8 +960,11 @@ and `2!` being the prelude's colon definitions), matrix multiply 1,288 and
 `34 fib` 23,477; its sieve does not run (its `+LOOP` ends at equality) and
 Fraeman's file does not load (no DOES>). On TAQOZ Reloaded the sieve takes
 34,380, bubble sort 78,262, matrix multiply 1,168 and `34 fib` 42,075, its
-prelude making CREATE's data its code space; Fraeman's arrays, about 69 KB,
-do not fit its 62 KB of room. On Ertl's four OctoForth is 3.0 to 6.6 times
+prelude making CREATE's data its code space then (since 2026-11-01 its data
+space, above its image, which has 385,024 bytes); Fraeman's file does not
+load, his defining words being colon definitions that run CREATE, which
+TAQOZ runs when it compiles them (taken for his arrays, about 69 KB, not
+fitting its 62 KB of code room, until 2026-11-01). On Ertl's four OctoForth is 3.0 to 6.6 times
 the speed of the other two. The
 call is the next thing to make cheaper: inlining small words and a tail
 call, M4's.

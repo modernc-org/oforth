@@ -148,7 +148,14 @@ word's row, code size and free RAM beside the clocks, and PAUSE with the
 stacks in the LUT. The answer, drafted here and posted by the user that
 day, came after the README had what he asked for: the call row measured
 with a word that is not inlined, and "What the programs take"
-(`scripts/size.sh`). `.github/FUNDING.yml` is ogo's.
+(`scripts/size.sh`). He replied again on 2026-11-01: what the
+subscription costs, which the user chose that day to leave unanswered,
+and that TAQOZ keeps its data in a space of its own with plenty of room.
+That was so, and the README's 62 KB for TAQOZ and its "Stanford does not
+fit" were wrong, the prelude's CREATE having put TAQOZ's arrays in its
+code space. Of fixing the text alone or measuring again, the user chose
+that day to measure again, before an answer: TAQOZ's arrays in its data
+space, Ertl's four timed again and the sizes measured again. `.github/FUNDING.yml` is ogo's.
 
 The files:
 
@@ -215,9 +222,11 @@ The files:
   free RAM beside the clocks) loads the same programs, `third.sh -n`
   writing them, and runs nothing: each system says by its own words what
   is held before and after (OctoForth an empty word's address and
-  UNUSED, P2XCForth `here@` and `lastfree`, TAQOZ HERE, @WORDS and a
-  `long`'s address), twice before, so that what the asking takes comes
-  off. `bench/oforth.fth`'s `call0` ends in EXIT, which keeps it from
+  UNUSED, P2XCForth `here@` and `lastfree`, TAQOZ HERE, @WORDS, a
+  `long`'s address and BUFFERS), twice before, so that what the asking
+  takes comes off. TAQOZ's data space is moved above its image first
+  (`$20000 org`), by the prelude and by `bench/taqoz.fth`, whose line
+  size.sh puts before the asking (2026-11-01, above). `bench/oforth.fth`'s `call0` ends in EXIT, which keeps it from
   being inlined (the same day): with no EXIT the row was the empty
   loop's. `scripts/p2xc.sh P2XCForthC.zip` builds P2XCForth for the EDGE into
   `build/p2xc` with its three printed changes; `scripts/f2012.sh` fetches
@@ -410,8 +419,14 @@ version` and the clock they were taken at, never from the estimates.
   `scripts/session.py` loading it by `ogo loadp2 -ZERO -t -b 921600`:
   its clocks are those it took booted from the flash, to the clock. It
   goes back into the flash by `BACKUP FLASH` typed to it so loaded. Its
-  data space has no room for 8 KB and it has a word FLAGS of its own,
-  which a `:=` of the same name breaks (bench/taqoz.fth). The ROM's TAQOZ, V1.1, is `ogo loadp2
+  data space, its variables' and `bytes`', is apart from its code, and
+  `$20000 org` puts it above the image, 385,024 bytes up to its buffers
+  at $7E000 (BUFFERS), its video player's buffer, unused, at $20000; at
+  boot it is at $2919, a few hundred bytes before code. It finds its
+  kernel's words before any defined later, so redefining one, ALLOT
+  among them, needs `REWORD` first (bench/third/prelude-taqoz.fth); it
+  has a word FLAGS of its own, which a `:=` of the same name breaks
+  (bench/taqoz.fth). The ROM's TAQOZ, V1.1, is `ogo loadp2
   -xTAQOZ -b 115200 -t`. P2XCForth's console is at 230400 and its input
   ends lines at LF; it knows lower case only, takes no TAB for a space,
   keeps names to 19 characters, and its `+LOOP` ends only at equality. Every use of the port

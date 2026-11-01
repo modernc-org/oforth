@@ -125,7 +125,7 @@ for prog in $progs; do
 			echo "p2xc stan not run: it lacks DOES>, which Fraeman's structures are made of, and the file does not load"
 			continue ;;
 		taqoz-stan)
-			echo "taqoz stan not run: its arrays take about 69 KB before Trees allocates, and TAQOZ has 62 KB of room"
+			echo "taqoz stan not run: Fraeman's defining words are colon definitions that run CREATE when they run, which TAQOZ runs when it compiles them, and the file does not load"
 			continue ;;
 		esac
 		case $system in
