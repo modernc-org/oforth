@@ -597,7 +597,14 @@ All measured or read in this session and recorded with their sources in
 - **Files** (`file.ogo`, `nine.ogo`, M4): a table of eight open files,
   each through a buffer of 512 bytes holding what was read or what was
   written and not yet sent (`dirty`), `off` where in the file it starts
-  and `pos` where the file is, the layer the SD card is behind too
+  and `pos` where the file is, and `failed` once a flush of it failed:
+  `broken` then fails every use but closing, `fileFlush` first, as a Go
+  `bufio.Writer` does after an error (an outside review of 2026-11-02:
+  a later FLUSH-FILE had answered 0 and a later write left a gap of
+  zeros; keeping the bytes for a retry was not taken, WRITE-FILE not
+  saying how much it took, nor, at the same review's word, clunking a
+  fid after a walk that stopped short, which 9P2000's walk(5) and
+  loadp2's u9fs make no fid; `TestFile`'s `hostFull`), the layer the SD card is behind too
   (`fileOpen`, `fileByte`, `fileWrite`, `fileSeek`, `fileFlush`,
   `fileClose`, `fileSize`, ...); a fileid is the place plus one, its 9P
   fid the place plus two, and `nineTemp` the fid of DELETE-FILE's,

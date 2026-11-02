@@ -696,6 +696,7 @@ var (
 	nhost     int
 	phost     int
 	hostSays  bool   // whether the host answers at all
+	hostFull  bool   // whether it refuses every write, as a full disk does
 	hostTyped string // what is typed before the next reply
 
 	hostWName  [16]byte
@@ -870,6 +871,10 @@ func hostServe() {
 	case tWrite:
 		if hostFid[hostGet(m, 7, 4)] != hostWFile {
 			hostErr(tag, "permission denied")
+			break
+		}
+		if hostFull {
+			hostErr(tag, "no space left on device")
 			break
 		}
 		off := int(hostGet(m, 11, 4))
@@ -1084,6 +1089,18 @@ func TestFile(t *testing.T) {
 		printf("host's file: %d bytes\n", nhostW)
 		t.Fail()
 	}
+	check(t, "S\" w.txt\" DELETE-FILE .", "0 ")
+	// A write the host refuses, as a full disk does: what the buffer held
+	// is lost, and every use of the file but closing it fails from then on,
+	// a FLUSH-FILE too, until it is opened again.
+	check(t, "S\" w.txt\" W/O CREATE-FILE . VALUE fe S\" lost\" fe WRITE-FILE .", "0 0 ")
+	hostFull = true
+	check(t, "fe FLUSH-FILE 0= .", "0 ")
+	hostFull = false
+	check(t, "fe FLUSH-FILE 0= . S\" more\" fe WRITE-FILE 0= . fe FILE-POSITION NIP NIP 0= .", "0 0 0 ")
+	check(t, "0 0 fe REPOSITION-FILE 0= . fe FILE-SIZE NIP NIP 0= . fe CLOSE-FILE 0= .", "0 0 0 ")
+	check(t, "S\" w.txt\" W/O OPEN-FILE . VALUE fg S\" ok\" fg WRITE-FILE . fg CLOSE-FILE .", "0 0 0 ")
+	hostHas(t, "ok")
 	check(t, "S\" w.txt\" DELETE-FILE .", "0 ")
 	check(t, "0 S\" r.fth\" REQUIRED REQUIRE r.fth INCLUDE r.fth .", "2 ")
 	check(t, "INCLUDE s.fth", "0 11 ")

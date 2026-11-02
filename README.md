@@ -137,7 +137,10 @@ The FILE word set reads and writes files so too: `INCLUDED`,
 `R/W` and `BIN`. A name is a path in the directory served; `RENAME-FILE`
 renames a file within its directory only, as 9P does. An error in a file
 is reported with its name and the line's number, and a `(` comment in a
-file may go on over lines. Under a
+file may go on over lines. A file is written through a buffer of 512
+bytes; when a write of it fails, as when the host's disk is full, what
+the buffer held is lost, and every word but `CLOSE-FILE` fails on the
+file from then on, `FLUSH-FILE` too, until it is opened again. Under a
 loader with no `-9`, such as a plain `ogo run`, INCLUDE gives up after three
 seconds, saying so, the bytes of its request showing on the terminal.
 

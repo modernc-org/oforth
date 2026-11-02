@@ -34,6 +34,7 @@ const (
 type file struct {
 	open   bool
 	dirty  bool   // buf[:n] was written and is not on the host yet
+	failed bool   // a write of it did not get there (broken)
 	mode   uint32 // famRO, famWO or famRW
 	off    uint32 // where in the file buf starts
 	pos, n int    // buf[:n] is the file from off on, pos where in it
@@ -102,6 +103,7 @@ func fileOpen(name []byte, mode uint32, create bool) int {
 	fl.open = true
 	fl.on = uint8(on)
 	fl.dirty = false
+	fl.failed = false
 	fl.mode = mode
 	fl.off = 0
 	fl.pos = 0
@@ -189,10 +191,28 @@ func fileSync(f int) bool {
 	return ok
 }
 
-// fileFlush sends what was written to f to the host, the card or the flash. What could
-// not be sent is lost.
+// broken answers whether a write of f did not get there, saying so in
+// nineErr. What was lost is not had back, so that every use of f but
+// closing it fails from then on, as a Go bufio.Writer's does, lest a later
+// FLUSH-FILE succeed or a later write leave a gap where the lost bytes
+// were. A write is not tried again: WRITE-FILE cannot say how much of its
+// bytes it took, and after the usual failures, a host that does not
+// answer or a card's block not written, the file is gone anyway.
+func broken(f int) bool {
+	if files[f].failed {
+		setNineErr("a write of the file failed")
+		return true
+	}
+	return false
+}
+
+// fileFlush sends what was written to f to the host, the card or the
+// flash. What could not be sent is lost, and f is broken.
 func fileFlush(f int) bool {
 	fl := &files[f]
+	if broken(f) {
+		return false
+	}
 	if !fl.dirty {
 		return true
 	}
@@ -202,6 +222,7 @@ func fileFlush(f int) bool {
 		k := backWrite(f, fl.off+uint32(at), fl.buf[at:fl.n])
 		if k <= 0 {
 			ok = false
+			fl.failed = true
 			break
 		}
 		at += k
@@ -265,7 +286,7 @@ func fileRead(f int, p []byte) int {
 // fileWrite writes p to f where it is, through its buffer.
 func fileWrite(f int, p []byte) bool {
 	fl := &files[f]
-	if fl.mode == famRO {
+	if fl.mode == famRO || broken(f) {
 		return false
 	}
 	if !fl.dirty {
@@ -805,7 +826,7 @@ func octoFile(id int) {
 		switch {
 		case !ok:
 		case id == oFilePosition:
-			v = filePos(f)
+			v, ok = filePos(f), !broken(f)
 		default:
 			v, ok = fileSize(f)
 		}

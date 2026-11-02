@@ -10,6 +10,17 @@ A released section is frozen: it says what that release did, and a later fix
 to the same area is a new entry under **Unreleased**, not an edit to the old
 one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
+## Unreleased
+
+### Fixed
+
+- **A file a write of which failed fails from then on**: what its buffer
+  held was lost, as before, but a later `FLUSH-FILE` answered 0 and a
+  later write went on past the lost bytes, leaving a gap of zeros in the
+  file. Now every word but `CLOSE-FILE` fails on it until it is opened
+  again, as a Go `bufio.Writer` does after an error, and `CLOSE-FILE`
+  closes it and fails.
+
 ## v0.2.0
 
 A second preview, built and tested with OctoGo v1.0.0-rc.3, as v0.1.0 was.
