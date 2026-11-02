@@ -158,6 +158,13 @@ that day to measure again, before an answer: TAQOZ's arrays in its data
 space, Ertl's four timed again and the sizes measured again (1e98ac0).
 The answer, drafted here and posted by the user that day, said he was
 right, what changed, and why Stanford still does not load on TAQOZ.
+He posted twice more on 2026-11-02: whether the inlining has a limit to
+keep code size reasonable, which the user answered by asking for a
+switch as C compilers have, OPTIMIZE-SIZE (below, "Inlining and tail
+calls"), measured by the scripts' `-size`; and whether the return stack
+is really faster in the LUT, and why not CALLB, answered from M0's
+numbers (ASSESSMENT.md section 4), PTRB being the data stack's pointer.
+The answer to both is drafted here, `build/forum/reply-christof-2026-11-02.md`.
 `.github/FUNDING.yml` is ogo's.
 
 The files:
@@ -678,7 +685,16 @@ All measured or read in this session and recorded with their sources in
   whose last long is a call (`lastCall`) with no branch resolved to just
   after it (`landing`) ends in `~unframe` and a jump instead: SEE shows
   `TAIL name`. Code placement moves timings by a few percent, a taken hub
-  branch costing 13 to 20 clocks with its target's place.
+  branch costing 13 to 20 clocks with its target's place. `OPTIMIZE-SIZE`
+  sets `optSize` and `OPTIMIZE-SPEED`, the default, clears it (tools.ogo;
+  the user's word of 2026-11-02, "a flag like C compilers have: optimize
+  for speed vs optimize for code size", after Christof Eb. asked in the
+  forum thread whether the inlining had a limit for code size): code
+  compiled while it is set inlines no body longer than a call, one long
+  (`compileWord`), and caches no loop (`endLoop`'s `pure`) and writes no
+  REP (`compileLoop`), their reservations cut; a body is still kept for
+  inlining by code compiled for speed. `TestOptimize`. `scripts/size.sh`,
+  `bench.sh` and `third.sh` measure it with `-size`, OctoForth alone.
 - **The loop cache** (`compile.ogo`, M4): `beginLoop` reserves five longs
   before a loop and `endLoop` one after it. A loop with no call or trap
   since its start (`lastImpure`, `tfImpure`) and at most `maxCache` longs is
@@ -819,8 +835,9 @@ scripts/release.sh [vX.Y.Z]     # build/release/vX.Y.Z/: the zip of oforth.binar
 flock -w 900 /tmp/p2-board.lock scripts/boot.py /dev/ttyUSB0 '1 2 + .'  # reset, the flash's OctoForth answering; -w 20 for a boot from the card
 ogo run --no-inline -9 .        # the REPL with INCLUDE serving this directory (under the lock; ogo v1.0.0-rc.3 on)
 scripts/p2xc.sh P2XCForthC.zip  # P2XCForth built for the EDGE, build/p2xc/p2xc.binary
-scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ Reloaded and P2XCForth, two minutes
-scripts/size.sh                 # what the benchmarks take of each system's memory and the room left; nothing timed
+scripts/bench.sh                # the benchmarks on OctoForth, TAQOZ Reloaded and P2XCForth, two minutes; -size: OctoForth alone under OPTIMIZE-SIZE
+scripts/size.sh                 # what the benchmarks take of each system's memory and the room left; nothing timed; -size as bench.sh's, in build/size-os
+scripts/third.sh                # Ertl's and Stanford's programs timed on the three, at 200 MHz; -s oforth for one system, -size as bench.sh's
 ```
 
 To capture a board run without a terminal, as the siblings do:

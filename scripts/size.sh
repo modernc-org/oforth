@@ -29,21 +29,30 @@
 #     asked after that.
 #
 # It prints a line for each program on each system, in bytes. It takes the
-# board lock for each run; all of them take about five minutes.
+# board lock for each run; all of them take about five minutes. With -size
+# it measures OctoForth alone, OPTIMIZE-SIZE before the programs, in
+# build/size-os.
 #
-# Usage: scripts/size.sh [PORT]
+# Usage: scripts/size.sh [-size] [PORT]
 
 set -eu
-port=${1:-/dev/ttyUSB0}
+size=
 dir=build/size
+if [ "${1:-}" = -size ]; then
+	size=1
+	dir=build/size-os
+	shift
+fi
+port=${1:-/dev/ttyUSB0}
 rm -rf $dir
 mkdir -p $dir/run $dir/log
 scripts/third.sh -n >/dev/null
 ogo build --no-inline -o build/oforth.binary .
 taqoz=$(scripts/taqoz.sh)
-python3 -I - $dir <<'PY'
+python3 -I - $dir $size <<'PY'
 import os, sys
 d = sys.argv[1]
+size = len(sys.argv) > 2
 # Each system's way to say what it holds: the definition of a word that
 # writes "@SZ@" and the numbers on the stack, and the lines that put them
 # there, # being the probe's number, which makes its names its own.
@@ -83,7 +92,7 @@ def write(system, prog, pre, body):
 def read(path):
     return open(path, encoding="latin-1").read()
 
-for system in ("oforth", "p2xc", "taqoz"):
+for system in ("oforth",) if size else ("oforth", "p2xc", "taqoz"):
     pre = ""
     if system == "p2xc":
         if not os.path.exists("build/p2xc/author.fth"):
@@ -96,6 +105,8 @@ for system in ("oforth", "p2xc", "taqoz"):
         org = "$20000 org\n"
         assert body.count(org) == 1
         pre, body = org.strip(), body.replace(org, "")
+    if size:
+        pre = "OPTIMIZE-SIZE"
     write(system, "bench", pre, body)
     for prog in ("sieve", "bubble", "matrix", "fib", "stan"):
         # The programs that run there, as scripts/third.sh says.
@@ -110,7 +121,10 @@ for system in ("oforth", "p2xc", "taqoz"):
         if system == "p2xc":
             pre = read("build/p2xc/author.fth") + pre
         assert s.startswith(pre + "\n"), path
-        write(system, prog, pre, strip_timed(s[len(pre) + 1:]))
+        body = strip_timed(s[len(pre) + 1:])
+        if size:
+            pre += "\nOPTIMIZE-SIZE"
+        write(system, prog, pre, body)
 PY
 wait_port="for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done; fuser -s $port && { echo 'port busy'; exit 1; }"
 for f in $dir/run/*.fth; do

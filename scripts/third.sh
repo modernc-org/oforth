@@ -31,20 +31,23 @@
 # its prelude, bench/third/prelude-SYSTEM.fth, the words the programs need
 # that it lacks, which are published there to be judged.
 #
-# Usage: scripts/third.sh [-n] [-p PROGRAMS] [-s SYSTEMS] [PORT]
+# Usage: scripts/third.sh [-n] [-size] [-p PROGRAMS] [-s SYSTEMS] [PORT]
 #
 # PROGRAMS and SYSTEMS are lists in quotes, of sieve bubble matrix fib stan
 # and of oforth p2xc taqoz; all of them by default. With -n it only writes
 # the programs as each system is given them, build/third/run/SYSTEM-PROG.fth,
-# which scripts/size.sh takes.
+# which scripts/size.sh takes. With -size it runs OctoForth alone,
+# OPTIMIZE-SIZE after its prelude.
 
 set -eu
 progs="sieve bubble matrix fib stan"
 systems="oforth p2xc taqoz"
 prepare=
+size=
 while [ $# -gt 0 ]; do
 	case $1 in
 	-n) prepare=1; shift ;;
+	-size) size=1; systems=oforth; shift ;;
 	-p) progs=$2; shift 2 ;;
 	-s) systems=$2; shift 2 ;;
 	*) break ;;
@@ -65,9 +68,10 @@ rm -rf $dir/src $dir/run
 mkdir -p $dir/src $dir/run
 tar -xzf $dir/bench.tar.gz -C $dir/src
 tar -xzf $dir/stanford.tar.gz -C $dir/src
-python3 -I - $dir <<'PY'
+python3 -I - $dir $size <<'PY'
 import re, sys
 d = sys.argv[1]
+size = len(sys.argv) > 2
 progs = {
     "sieve": d + "/src/bench/forth/sieve.fs",
     "bubble": d + "/src/bench/forth/bubble-sort.fs",
@@ -101,6 +105,8 @@ for name, path in progs.items():
         else:
             timed = "\\ @TIME %s\n%s\n" % (name, case("123 EMIT main 125 EMIT"))
         body = case(t) + "\n" + timed
+        if size and system == "oforth":
+            body = "OPTIMIZE-SIZE\n" + body
         if system == "p2xc":
             body = body.replace("\t", " ")
             long = sorted(set(w for w in re.findall(r"(?:^|\s):\s+(\S+)", body) if len(w) > 19))

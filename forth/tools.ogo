@@ -8,7 +8,8 @@ import (
 
 // The TOOLS words but .S, SEE and WORDS, which are words.ogo's, and TOOLS
 // EXT's but the wordlists' and the assembler's, and KEY? and MS of FACILITY:
-// ? DUMP KEY? MS AHEAD BYE the [IF]s CS-PICK CS-ROLL N>R NR> SYNONYM.
+// ? DUMP KEY? MS AHEAD BYE the [IF]s CS-PICK CS-ROLL N>R NR> SYNONYM; and
+// OPTIMIZE-SIZE and OPTIMIZE-SPEED, OctoForth's own (optSize).
 
 func octoTools(id int) {
 	switch id {
@@ -44,6 +45,8 @@ func octoTools(id int) {
 		nRFrom()
 	case oSynonym:
 		synonym()
+	case oOptimizeSize, oOptimizeSpeed:
+		optSize = id == oOptimizeSize
 	default:
 		abort("no such OctoGo word")
 	}

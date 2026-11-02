@@ -14,6 +14,12 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
 ### Added
 
+- **`OPTIMIZE-SIZE` and `OPTIMIZE-SPEED`**, as `-Os` and `-O2` are to a C
+  compiler: code compiled under `OPTIMIZE-SIZE` inlines no colon word
+  longer than the call it would take the place of, and runs no loop from
+  cog RAM; `OPTIMIZE-SPEED`, the default, goes back. Stanford's eight take
+  19,632 bytes of code against 22,468, and 20,175 ms against 15,951.
+  `scripts/bench.sh`, `size.sh` and `third.sh` measure it with `-size`.
 - **What the benchmarks take of each system's memory**, and the room they
   leave, in the README beside their clocks, measured by `scripts/size.sh`.
 

@@ -490,6 +490,28 @@ func TestRep(t *testing.T) {
 	checkNot(t, "SEE rn6", "REP ")
 }
 
+// TestOptimize holds OPTIMIZE-SIZE to inlining no body longer than a call
+// and taking no loop into cog RAM, and OPTIMIZE-SPEED to undoing it.
+func TestOptimize(t *testing.T) {
+	check(t, "OPTIMIZE-SIZE : os1 DUP * ; : os2 os1 1+ ; 3 os2 .", "10 ")
+	checkHas(t, "SEE os2", "os1")
+	check(t, ": os3 ; : os4 1+ ; : os5 os3 os4 os4 ; 1 os5 .", "3 ")
+	checkNot(t, "SEE os5", "os3")
+	checkNot(t, "SEE os5", "os4")
+	check(t, ": os6 0 10 0 DO I + LOOP ; os6 .", "45 ")
+	check(t, ": os7 0 3 0 DO 4 0 DO I J * + LOOP LOOP ; os7 .", "18 ")
+	check(t, ": os8 0 BEGIN 1+ DUP 100 = UNTIL ; os8 .", "100 ")
+	for _, s := range [...]string{"SEE os6", "SEE os7", "SEE os8"} {
+		checkNot(t, s, "CACHE ")
+		checkNot(t, s, "REP ")
+		checkNot(t, s, "NOP")
+	}
+	check(t, "OPTIMIZE-SPEED : os9 os1 1+ ; 3 os9 .", "10 ")
+	checkHas(t, "SEE os9", "  * ")
+	check(t, ": os10 0 10 0 DO I + LOOP ; os10 .", "45 ")
+	checkHas(t, "SEE os10", "REP ")
+}
+
 // TestP2 holds the P2 words to what the p2 package's functions do, on the
 // P2-EDGE's LED pins P56 and P57, which nothing else drives.
 func TestP2(t *testing.T) {

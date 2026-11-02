@@ -258,7 +258,10 @@ REPL.
   `RUN`, which runs a word on a cog of its own (below).
 - **Room**: 128 KB of code space and 160 KB of data space. The
   dictionary is 127 primitives, copied into words as P2 instructions, and
-  165 words written in OctoGo, which compiled code calls back into.
+  167 words written in OctoGo, which compiled code calls back into.
+- **Speed or size**: `OPTIMIZE-SIZE` makes the code compiled after it
+  smaller and slower, and `OPTIMIZE-SPEED`, the default, goes back, as a
+  C compiler's `-Os` and `-O2` do (below, "Speed or size").
 - **Not there**: FLOATING, LOCALS, MEMORY (`ALLOCATE`), SEARCH-ORDER,
   BLOCK, the rest of FACILITY (`PAGE`, `AT-XY`, `TIME&DATE`, the
   structures), XCHAR; multitasking within a cog, `RUN` giving a word a cog
@@ -469,9 +472,9 @@ is not counted, nor what a program allots while it runs, as Stanford Trees
 does. The three keep their memory differently, so the columns count
 different things:
 
-- OctoForth's binary is 505,452 bytes of the hub's 524,288. Of that, 288 KB
+- OctoForth's binary is 506,004 bytes of the hub's 524,288. Of that, 288 KB
   are the two spaces it compiles into, 128 KB for code and 160 KB for data;
-  the system itself is the other 210,540. Its headers are in tables of
+  the system itself is the other 211,092. Its headers are in tables of
   their own, room for 1024 headers and 12 KB of names, and are not
   counted here.
 - P2XCForth's binary is 386,796 bytes, 300,000 of them its one memory for
@@ -486,7 +489,7 @@ different things:
 
 | | OctoForth code | OctoForth data | P2XCForth | TAQOZ code | TAQOZ data |
 | --- | --- | --- | --- | --- | --- |
-| the room at start | 126,176 | 163,824 | 283,168 | 62,278 | 385,020 |
+| the room at start | 126,152 | 163,824 | 283,168 | 62,278 | 385,020 |
 | bench/'s five | 1,268 | 8,192 | 669 | 321 | 8,192 |
 | Ertl: sieve | 732 | 8,196 | does not run | 170 | 8,194 |
 | Ertl: bubble sort | 1,896 | 24,038 | 25,008 | 497 | 24,004 |
@@ -505,6 +508,35 @@ code and names and 385 KB for data. OctoForth's two spaces hold about as
 much as P2XCForth's one memory, enough for Stanford's 68,787 bytes of
 data.
 
+### Speed or size
+
+`OPTIMIZE-SIZE` makes the code compiled after it smaller, and
+`OPTIMIZE-SPEED`, the default, goes back, as `-Os` and `-O2` do to a C
+compiler. Under `OPTIMIZE-SIZE` a colon word is inlined only if its body
+is no longer than the call it takes the place of, one long, where it is
+otherwise inlined up to 16 longs with no call or branch in it, and no loop
+is copied into cog RAM, which saves a loop's six longs of loader and exit
+and a REP's three. The programs above, their code in bytes
+(`scripts/size.sh -size`) and their time in milliseconds at 200 MHz
+(`scripts/third.sh -size`), one build (OctoGo v1.0.0-rc.3, `--no-inline`,
+measured 2026-11-02):
+
+| | code, speed | code, size | time, speed | time, size |
+| --- | --- | --- | --- | --- |
+| Ertl: sieve | 732 | 708 | 5,503 | 8,287 |
+| Ertl: bubble sort | 1,896 | 1,660 | 10,174 | 12,526 |
+| Ertl: matrix multiply | 1,304 | 1,100 | 208 | 240 |
+| Ertl: fib | 144 | 144 | 7,743 | 7,743 |
+| Stanford, all eight | 22,468 | 19,632 | 15,951 | 20,175 |
+
+A build whose `OPTIMIZE-SIZE` dropped the loop cache alone showed which
+does what: of Stanford's 2,836 bytes, 2,476 are the inlining's, which
+makes it run in 16,175 ms where it runs in 20,175 without, and 360 the
+loop cache's, which gains it little but makes Ertl's sieve 1.5 times as
+fast for 24 bytes. bench/'s five take 1,208 bytes against 1,268, and
+their empty loop 2,400,020 clocks against 200,132
+(`scripts/bench.sh -size`).
+
 ## How it works
 
 The P2 has good Forths: Peter Jakacki's TAQOZ, in its ROM, and Christof
@@ -515,9 +547,9 @@ instead, as Mecrisp-Stellaris does on ARM and as the author's own Forth for
 the Intel 8080 did in the 1980s, on paper, on a Tesla JPR-1:
 
 - the primitives are copied into a word as P2 instructions, literals
-  become their immediates, small colon words are inlined, a call in tail
-  position becomes a jump, and a word runs at the address it was written
-  to;
+  become their immediates, a colon word of at most 16 longs with no call
+  or branch in it is inlined, a call in tail position becomes a jump, and
+  a word runs at the address it was written to;
 - the top of the data stack is in a register and both stacks are in the
   cog's LUT RAM, two to three clocks an access; a call keeps its return
   address in a register, 34 clocks a call and return;

@@ -228,6 +228,14 @@ const maxCache = 240
 // maxInline is the longest body, in longs, a word may have to be inlined.
 const maxInline = 16
 
+// optSize is set by OPTIMIZE-SIZE and cleared by OPTIMIZE-SPEED, the
+// default: code compiled while it is set is made no longer for speed. It
+// inlines no body longer than the call it takes the place of, a long, and
+// takes no loop into cog RAM, so that no loop keeps the six longs of its
+// loader and exit, nor a REP its three. A word defined so is inlined still
+// where it is called by code compiled for speed.
+var optSize bool
+
 func emitw(v uint32) {
 	if cp >= len(code) {
 		abort("code space full")
@@ -354,7 +362,7 @@ func compileWord(w int) {
 		emitT(t)
 	case kColon:
 		flushLit()
-		if words[w].val > 0 {
+		if words[w].val > 0 && (!optSize || words[w].val <= 2) {
 			// Inlined: its body, which has no call, branch or trap, and
 			// may be empty. val is the body's length plus one.
 			b := int(words[w].id)
@@ -613,7 +621,7 @@ func endLoop(rs int) {
 	nloops--
 	base := int(loops[nloops])
 	// Its length once its candidates' reservations are out.
-	pure := lastImpure < rs && re-rs-6*(ncands-base) <= maxCache
+	pure := !optSize && lastImpure < rs && re-rs-6*(ncands-base) <= maxCache
 	if !pure {
 		for i := base; i < ncands; i++ {
 			if ntocache == len(tocache) {
@@ -864,7 +872,7 @@ func compileLoop(plus bool) {
 	switch {
 	case cacheOff || aborted:
 		// Nothing moves: the reservation stays, three NOPs run once.
-	case !plus && repeatable(rs+3, lp) && cp+1-rs <= maxCache:
+	case !optSize && !plus && repeatable(rs+3, lp) && cp+1-rs <= maxCache:
 		repeat(rs, lp+1-(rs+3))
 	default:
 		cut(rs, 3)

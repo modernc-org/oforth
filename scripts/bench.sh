@@ -8,11 +8,17 @@
 # fetches, loaded and talked to by scripts/taqoz.py), and P2XCForth's if
 # scripts/p2xc.sh has built it. Each is a line of results: the empty loop,
 # the calls, the sieve, fib and the factorials. It takes the board lock for
-# each system; the three take about two minutes.
+# each system; the three take about two minutes. With -size it runs
+# OctoForth alone, OPTIMIZE-SIZE typed before the benchmarks.
 #
-# Usage: scripts/bench.sh [PORT]
+# Usage: scripts/bench.sh [-size] [PORT]
 
 set -eu
+size=
+if [ "${1:-}" = -size ]; then
+	size=1
+	shift
+fi
 port=${1:-/dev/ttyUSB0}
 mkdir -p build
 ogo build --no-inline -o build/oforth.binary .
@@ -20,10 +26,11 @@ taqoz=$(scripts/taqoz.sh)
 wait_port="for i in 1 2 3 4 5 6; do fuser -s $port || break; sleep 5; done; fuser -s $port && { echo 'port busy'; exit 1; }"
 printf 'OctoForth   '
 flock -o -w 900 /tmp/p2-board.lock sh -c "$wait_port
-	(sleep 4; while IFS= read -r l; do printf '%s\r' \"\$l\"; sleep 0.2; done < bench/oforth.fth; sleep 4; printf '\035') |
+	(sleep 4; [ -z '$size' ] || printf 'OPTIMIZE-SIZE\r'; while IFS= read -r l; do printf '%s\r' \"\$l\"; sleep 0.2; done < bench/oforth.fth; sleep 4; printf '\035') |
 		timeout 60 ogo loadp2 -t -NOEOF -p $port -b 230400 build/oforth.binary" |
 	tr -d '\r' | sed -n 's/^\(empty\|call\|sieve\|fib\|fact\) \([0-9]*\) .*/\2/p' | tr '\n' ' '
 echo
+[ -z "$size" ] || exit 0
 printf 'TAQOZ       '
 flock -o -w 900 /tmp/p2-board.lock sh -c "$wait_port
 	timeout 300 python3 -I scripts/taqoz.py $port $taqoz bench/taqoz.fth" |
