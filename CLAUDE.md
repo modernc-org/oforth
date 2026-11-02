@@ -137,7 +137,12 @@ the user that day; whatever is pushed is seen at once. v0.1.0 is
 released on the mirror, https://github.com/modernc-org/oforth/releases/tag/v0.1.0,
 marked a pre-release, with `oforth-v0.1.0.zip` (sha256 2bf155e0...) and
 `SHA256SUMS`, both checked byte for byte against the local build the
-same day, and the notes drafted here. It is announced since the same
+same day, and the notes drafted here. v0.2.0 followed on 2026-11-02, the
+same way, at the user's word, so that Christof Eb. could try
+OPTIMIZE-SIZE with no OctoGo: tag 5c5fa6e, a pre-release built with
+rc.3, `oforth-v0.2.0.zip` (sha256 bfa874ca...) run on the board before
+the tag was pushed, the assets downloaded again and checked byte for
+byte, the notes (`build/release/v0.2.0/NOTES.md`) as approved. It is announced since the same
 day in a thread of its own on the Parallax forums,
 https://forums.parallax.com/discussion/178225/octoforth-a-native-code-forth-for-the-p2-written-in-octogo,
 and by a short post linking it in OctoGo's thread,
@@ -164,7 +169,9 @@ switch as C compilers have, OPTIMIZE-SIZE (below, "Inlining and tail
 calls"), measured by the scripts' `-size`; and whether the return stack
 is really faster in the LUT, and why not CALLB, answered from M0's
 numbers (ASSESSMENT.md section 4), PTRB being the data stack's pointer.
-The answer to both is drafted here, `build/forum/reply-christof-2026-11-02.md`.
+The answer to both, drafted here (`build/forum/reply-christof-2026-11-02.md`),
+its last paragraph pointing at v0.2.0's release, was posted by the user
+the same day.
 `.github/FUNDING.yml` is ogo's.
 
 The files:
@@ -348,6 +355,9 @@ section 9 has the reasons:
   README's two tables, the pin's clocks and the SEE example were
   measured again with rc.3 on 2026-10-31. A later
   release is built with v1.0.0 and measured again.
+- v0.2.0, the user's decision of 2026-11-02: a second preview, built
+  with rc.3 as v0.1.0, with OPTIMIZE-SIZE, the console ring's fix and the
+  cheaper traps; its `boot.binary` into the board's flash after it.
 - `--no-inline` for every build of OctoForth, the user's yes of
   2026-10-31: the scripts, the release and the README's commands (not
   `ogo test`, which has no such flag, nor the probe, whose numbers are
@@ -386,11 +396,11 @@ version` and the clock they were taken at, never from the estimates.
   shared with the ogo, p2-11 and obeam sessions. Its flash, a W25Q128
   (JEDEC ID EF 70 18, 16 MB), holds OctoForth since 2026-10-30, written
   by `scripts/flash.sh` (`ogo loadp2 -FLASH`, the loader's boot stub at
-  0 and the image from $400), since 2026-11-01 `boot/` of 5be5570, the
-  console ring's fix, an untagged build, 506,692 bytes (sha256
-  0b0f94f7...), its banner "OctoForth, a native-code Forth for the P2"
-  with no version (from 2026-10-31 v0.1.0's `boot.binary`, its banner
-  "OctoForth v0.1.0, ..."): the board boots it after a reset with no
+  0 and the image from $400), since 2026-11-02 v0.2.0's `boot.binary`
+  from the release's zip, 506,976 bytes (sha256 bdad7a41...), its banner
+  "OctoForth v0.2.0, ...", written by flash.sh's steps with that file
+  rather than a build of `boot/` (from 2026-11-01 an untagged build of
+  5be5570, and from 2026-10-31 v0.1.0's): the board boots it after a reset with no
   loader, its banner at 230400 baud half a second after the reset,
   which `scripts/boot.py` reads. The loader's `-FLASH` must keep its
   terminal open until the banner: without `-t` it closes the port as
