@@ -10,7 +10,9 @@ A released section is frozen: it says what that release did, and a later fix
 to the same area is a new entry under **Unreleased**, not an edit to the old
 one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
-## Unreleased
+## v0.2.0
+
+A second preview, built and tested with OctoGo v1.0.0-rc.3, as v0.1.0 was.
 
 ### Added
 
@@ -32,6 +34,19 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
 ### Fixed
 
+- **Source pasted faster than the REPL takes it is no longer garbled**: the
+  REPL echoes every byte and says ok after every line at the serial line's
+  speed, so a paste with no pause between its lines fell behind by about
+  five bytes a line, and past some 800 lines, or more short ones, it ran
+  over the console's ring of 4 KB, which then gave lines twice or out of
+  order, saying nothing (3,000 lines of `1+` gave 2,992, a stray `+` and
+  the last line twice). Now the lines before the gap are interpreted, the
+  rest of the paste is dropped, and the line the gap cut is an error,
+  `input lost: it came too fast`, THROW code -57.
+- **A directory whose chain of clusters loops**, on a damaged card, ends a
+  walk at FAT's limit of 65,536 entries a directory with "the card's FAT
+  is damaged", where it was walked for ever; a directory is not grown past
+  the limit ("the directory is full").
 - **A word OctoGo executes is cheaper to call from compiled code**, `HERE`,
   `,` and `ALLOT` among them, which a program that builds data at run time
   calls by the thousand. A word goes straight to the switch that holds it,
@@ -58,22 +73,6 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
   which OctoForth has no hub RAM for, and then builds it with every switch a
   chain of compares, saying nothing; `--no-inline` keeps them tables of
   jumps, and builds in a third of the time (OCTOGO.md, 1).
-
-### Fixed
-
-- **Source pasted faster than the REPL takes it is no longer garbled**: the
-  REPL echoes every byte and says ok after every line at the serial line's
-  speed, so a paste with no pause between its lines fell behind by about
-  five bytes a line, and past some 800 lines, or more short ones, it ran
-  over the console's ring of 4 KB, which then gave lines twice or out of
-  order, saying nothing (3,000 lines of `1+` gave 2,992, a stray `+` and
-  the last line twice). Now the lines before the gap are interpreted, the
-  rest of the paste is dropped, and the line the gap cut is an error,
-  `input lost: it came too fast`, THROW code -57.
-- **A directory whose chain of clusters loops**, on a damaged card, ends a
-  walk at FAT's limit of 65,536 entries a directory with "the card's FAT
-  is damaged", where it was walked for ever; a directory is not grown past
-  the limit ("the directory is full").
 
 ## v0.1.0
 
