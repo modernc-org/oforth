@@ -52,7 +52,13 @@ as it was (the user's word: OctoForth writes in the card's root and
 leaves that file alone) until 2026-10-31, when the user had it replaced
 for good by OctoForth's `boot/`, 505,732 bytes in one piece from
 cluster 199, obeam's copied first into `build/sdboot` (sha256
-2dd187e3...), by OctoForth itself. Every block in use was copied to the host
+2dd187e3...), by OctoForth itself; and on 2026-11-02, at the user's
+word, by v0.2.0's `boot.binary` from the release's zip, 506,976 bytes
+(sha256 bdad7a41...) in one piece from cluster 359, which v0.2.0's
+REPL loaded into RAM copied from the host over 9P by the README's
+COPY, read back identical, `cardcheck.sh` passing and `mshowfat` on
+its image showing the clusters; not booted from the card, FLASH being
+on. Every block in use was copied to the host
 before the first write, in a scratch directory, and a FAT32 image built
 of it, which `fsck.fat -n` passed; the card is judged so after every
 change of the FAT code, there being no tool on the board for it:
