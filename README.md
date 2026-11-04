@@ -422,13 +422,15 @@ John Hennessy gathered, in Martin Fraeman's Forth of 1989. Every system
 runs at 200 MHz, timed by the host between two marks the system writes
 around the work, in milliseconds; fewer is faster. OctoForth is built by
 OctoGo v1.0.0-rc.3, `--no-inline` (measured 2026-10-31; TAQOZ's column
-again on 2026-11-01, its arrays in its data space).
+again on 2026-11-01, its arrays in its data space; P2XCForth's sieve,
+bubble sort and matrix multiply on 2026-11-04, with a `+LOOP` of its
+prelude's).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| Ertl: sieve, 1000 times | 5,503 | does not run | 34,348 |
-| Ertl: bubble sort, 6000 | 10,175 | 82,959 | 78,263 |
-| Ertl: matrix multiply, 64 by 64 | 208 | 1,288 | 1,152 |
+| Ertl: sieve, 1000 times | 5,503 | 33,952 | 34,348 |
+| Ertl: bubble sort, 6000 | 10,175 | 77,924 | 78,263 |
+| Ertl: matrix multiply, 64 by 64 | 208 | 1,272 | 1,152 |
 | Ertl: `34 fib` | 7,743 | 23,477 | 42,811 |
 | Stanford Perm, 10 times | 768 | does not load | does not load |
 | Stanford Towers | 1,393 | | |
@@ -450,16 +452,22 @@ Each system loads a prelude first, [bench/third/](bench/third), with the
 words the programs need and it lacks: for OctoForth seven words of
 Fraeman's SC32 kernel; for P2XCForth, after its author's own block words
 taken from his archive at run time, plain colon definitions of the ANS
-words it lacks, `2@` and `2!` among
-them, which costs it in bubble sort; for TAQOZ its ANS words under TAQOZ's
-names, its data space moved above its image, with a CREATE and an ALLOT of
-that space, TAQOZ's own being of its code space, and `2@` and `2!` again
-colon definitions. Ertl's sieve does not run
-on P2XCForth, whose `+LOOP` ends only when the index equals the limit, and
-Fraeman's file does not load there, lacking DOES>, nor on TAQOZ: his
-defining words are colon definitions that run CREATE when they run, and
-TAQOZ, which compiles a whole line before it runs any of it, runs CREATE
-when it compiles them. Every program that ran
+words it lacks, `2@` and `2!` among them, which costs it in bubble sort,
+and a `+LOOP`, a macro; for TAQOZ its ANS words under TAQOZ's names, its
+data space moved above its image, with a CREATE and an ALLOT of that space,
+TAQOZ's own being of its code space, and `2@` and `2!` again colon
+definitions. P2XCForth's own `+LOOP` ends only when the index equals the
+limit, which the sieve's steps pass; the prelude's compiles a LOOP after
+code that adds the step to the index no further than the limit, three
+bytecodes a step that a LOOP ending past the limit would not need. Bubble
+sort and matrix multiply, whose steps land on their limits, ran with
+P2XCForth's own `+LOOP` too, a trap into its C, in 82,959 and 1,288 ms; the
+table has them with the prelude's. Its author has since changed his LOOP to
+end past the limit and made `+LOOP` a macro over it (2026-11-04), which
+P2XCForthD does not have. Fraeman's file does not load on P2XCForth,
+lacking DOES>, nor on TAQOZ: his defining words are colon definitions that
+run CREATE when they run, and TAQOZ, which compiles a whole line before it
+runs any of it, runs CREATE when it compiles them. Every program that ran
 gave its expected answer, and each Stanford one passed its own check.
 The host's clock ticks every 16 ms, so a Stanford time moves by a tick or
 two from run to run, and by up to 5% with where the code lands: TAQOZ's
@@ -494,9 +502,9 @@ different things:
 | --- | --- | --- | --- | --- | --- |
 | the room at start | 126,152 | 163,824 | 283,168 | 62,278 | 385,020 |
 | bench/'s five | 1,268 | 8,192 | 669 | 321 | 8,192 |
-| Ertl: sieve | 732 | 8,196 | does not run | 170 | 8,194 |
-| Ertl: bubble sort | 1,896 | 24,038 | 25,008 | 497 | 24,004 |
-| Ertl: matrix multiply | 1,304 | 49,156 | 49,985 | 402 | 49,156 |
+| Ertl: sieve | 732 | 8,196 | 8,539 | 170 | 8,194 |
+| Ertl: bubble sort | 1,896 | 24,038 | 25,033 | 497 | 24,004 |
+| Ertl: matrix multiply | 1,304 | 49,156 | 50,000 | 402 | 49,156 |
 | Ertl: fib | 144 | 0 | 121 | 51 | 0 |
 | Stanford, all eight | 22,468 | 68,787 | does not load | does not load | |
 

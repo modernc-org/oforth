@@ -957,7 +957,9 @@ bubble sort 12,558, matrix multiply 240, `34 fib` 7,743; Fraeman's Perm 896,
 Towers 1,904, Queens 1,312, Intmm 2,976, Puzzle 6,671, Quick 1,808, Bubble
 1,920, Trees 3,167. On P2XCForthD Ertl's bubble sort takes 82,960 (its `2@`
 and `2!` being the prelude's colon definitions), matrix multiply 1,288 and
-`34 fib` 23,477; its sieve does not run (its `+LOOP` ends at equality) and
+`34 fib` 23,477; its sieve does not run (its `+LOOP` ends at equality;
+since 2026-11-04 it runs with a `+LOOP` of the prelude's, 33,952 ms,
+which takes bubble sort to 77,924 and matrix multiply to 1,272) and
 Fraeman's file does not load (no DOES>). On TAQOZ Reloaded the sieve takes
 34,380, bubble sort 78,262, matrix multiply 1,168 and `34 fib` 42,075, its
 prelude making CREATE's data its code space then (since 2026-11-01 its data

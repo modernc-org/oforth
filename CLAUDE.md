@@ -34,7 +34,8 @@ P2XCForthD, the newest P2XCForth (2026-04-07, the user's download from the
 forum thread 176239; there is no repository), and 1.3 to 6.5 times TAQOZ
 Reloaded's. Third parties' benchmarks too (`scripts/third.sh`, README.md
 "Third parties' benchmarks"): Ertl's four and Fraeman's Stanford suite,
-all twelve passing on OctoForth, three of Ertl's on P2XCForth, all four of
+all twelve passing on OctoForth, all four of Ertl's on P2XCForth (the
+sieve since 2026-11-04, by a `+LOOP` of its prelude's), all four of
 Ertl's on TAQOZ. The board's SD card, p2-11's, sometimes stopped
 answering after resets (TAQOZ then stopped at boot with "BAD CID"), and
 only a power cycle cured it; the user took it out on 2026-10-29, and
@@ -177,7 +178,18 @@ is really faster in the LUT, and why not CALLB, answered from M0's
 numbers (ASSESSMENT.md section 4), PTRB being the data stack's pointer.
 The answer to both, drafted here (`build/forum/reply-christof-2026-11-02.md`),
 its last paragraph pointing at v0.2.0's release, was posted by the user
-the same day.
+the same day. He thanked for it that evening, and posted on 2026-11-04
+that Ertl's sieve runs on his P2XCForth now, 1899 primes in 29,405 us a
+pass: its LOOP changed to end past the limit, which P2XCForthD's does
+not, and `+LOOP`, a TRAP, made a macro over it. Of measuring it here with
+a `+LOOP` of the prelude's, waiting for his next archive or only
+replying, the user chose that day to measure: the prelude's `+LOOP` adds
+the step no further than the limit, for P2XCForthD's LOOP, and the sieve
+took 33,952 ms for 1000 passes, the answer right, against OctoForth's
+5,503 and TAQOZ's 34,348; bubble sort and matrix multiply, which take it
+too, 77,924 against 82,959 and 1,272 against 1,288, P2XCForth's own
+`+LOOP` being a trap. Bubble sort leaves a 1 on P2XCForth's stack with
+either `+LOOP`, its own check passing.
 `.github/FUNDING.yml` is ogo's.
 
 The files:

@@ -124,9 +124,6 @@ for prog in $progs; do
 		f=$dir/run/$system-$prog.fth
 		[ -f $f ] || continue
 		case $system-$prog in
-		p2xc-sieve)
-			echo "p2xc sieve not run: its +LOOP ends at equality, and the sieve's steps past the limit"
-			continue ;;
 		p2xc-stan)
 			echo "p2xc stan not run: it lacks DOES>, which Fraeman's structures are made of, and the file does not load"
 			continue ;;

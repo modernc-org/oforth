@@ -110,8 +110,7 @@ for system in ("oforth",) if size else ("oforth", "p2xc", "taqoz"):
     write(system, "bench", pre, body)
     for prog in ("sieve", "bubble", "matrix", "fib", "stan"):
         # The programs that run there, as scripts/third.sh says.
-        if (system, prog) in (("p2xc", "sieve"), ("p2xc", "stan"),
-                              ("taqoz", "stan")):
+        if (system, prog) in (("p2xc", "stan"), ("taqoz", "stan")):
             continue
         path = "build/third/run/%s-%s.fth" % (system, prog)
         if not os.path.exists(path):

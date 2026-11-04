@@ -46,6 +46,13 @@
 variable base
 : <# ; : #s ; : #> ;
 : u.lz 2drop ;
+\ +LOOP, for a step that is positive, all the programs take: P2XCForth's
+\ LOOP and +LOOP end only when the index equals the limit, which the sieve's
+\ steps pass, and its +LOOP is a trap into its C. This one adds the step to
+\ the index, no further than the limit, and one less, which the LOOP it
+\ compiles adds; the top of the return stack is the index, the cell under it
+\ the limit. Its author wrote on 2026-11-04 of a +LOOP of his, a macro over
+\ a LOOP he changed to end past the limit, which P2XCForthD's does not.
+: +loop s" r> + r@ min 1- >r loop " eval$ ; immediate
 \ What cannot be given here: DOES>, which Fraeman's structures, and so his
-\ Towers and Trees, are made with; and an ANS +LOOP: P2XCForth's ends when
-\ the index equals the limit, and the sieve's steps past it.
+\ Towers and Trees, are made with.

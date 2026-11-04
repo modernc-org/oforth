@@ -12,6 +12,15 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
 ## Unreleased
 
+### Changed
+
+- **Ertl's sieve runs on P2XCForth** in the benchmarks: its prelude has a
+  `+LOOP` of its own, P2XCForth's ending only when the index equals the
+  limit, which the sieve's steps pass. 1000 passes take 33,952 ms at 200
+  MHz, against OctoForth's 5,503 and TAQOZ's 34,348. Bubble sort and
+  matrix multiply take it too, P2XCForth's own being a trap into its C:
+  77,924 ms against 82,959, and 1,272 against 1,288.
+
 ### Fixed
 
 - **A file a write of which failed fails from then on**: what its buffer
