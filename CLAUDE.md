@@ -189,7 +189,11 @@ took 33,952 ms for 1000 passes, the answer right, against OctoForth's
 5,503 and TAQOZ's 34,348; bubble sort and matrix multiply, which take it
 too, 77,924 against 82,959 and 1,272 against 1,288, P2XCForth's own
 `+LOOP` being a trap. Bubble sort leaves a 1 on P2XCForth's stack with
-either `+LOOP`, its own check passing.
+either `+LOOP`, its own check passing. The answer, drafted here
+(`build/forum/reply-christof-2026-11-04.md`) after the numbers were
+pushed (b0641de), was posted by the user the same day: the prelude's
+`+loop`, the times beside his and the sizes, and that an archive of his
+with the new LOOP will be measured again with his `+loop`.
 `.github/FUNDING.yml` is ogo's.
 
 The files:
