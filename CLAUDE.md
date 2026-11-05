@@ -193,7 +193,20 @@ either `+LOOP`, its own check passing. The answer, drafted here
 (`build/forum/reply-christof-2026-11-04.md`) after the numbers were
 pushed (b0641de), was posted by the user the same day: the prelude's
 `+loop`, the times beside his and the sizes, and that an archive of his
-with the new LOOP will be measured again with his `+loop`.
+with the new LOOP will be measured again with his `+loop`. He posted
+again on 2026-11-05: the LUT and PR0-PR7 tight in his design, the
+sieve's inner loop as a code word of his assembler, `pClear`, 14,339 us
+a pass, astonished that OctoForth is still so much faster, a chart of
+code size against time with a P2XCForthE (144 bytes, 30,844 us), which
+we do not have, and that an editor and an assembler would need overlays.
+The answer, drafted here (`build/forum/reply-christof-2026-11-05.md`)
+from `SEE PRIMES` on the board and posted by the user the same day: the
+outer loop, the inner inside it, is 72 longs run from cog RAM; the inner
+loop is 15 instructions against his 5, so the difference is the outer
+loop, still bytecodes in his hybrid, 10 instructions a zero flag here;
+the cache 1.5 times (OPTIMIZE-SIZE's 8,287 us a pass) and native code
+1.7; the LUT and 13 of the 16 registers the engine's; and whether
+P2XCForthE is out in an archive, to be measured with his `+loop`.
 `.github/FUNDING.yml` is ogo's.
 
 The files:
