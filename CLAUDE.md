@@ -497,9 +497,10 @@ version` and the clock they were taken at, never from the estimates.
   kernel's words before any defined later, so redefining one, ALLOT
   among them, needs `REWORD` first (bench/third/prelude-taqoz.fth); it
   has a word FLAGS of its own, which a `:=` of the same name breaks
-  (bench/taqoz.fth). `scripts/session.py` loses the first line it
-  pastes into TAQOZ (seen 2026-11-06), so a file for it begins with a
-  comment, as third.sh's and size.sh's do. The ROM's TAQOZ, V1.1, is `ogo loadp2
+  (bench/taqoz.fth). So loaded, it says nothing for 1.7 s before its
+  prompt, and a line sent in that silence is lost, which
+  `scripts/session.py` did to its first line until 2026-11-06, when it
+  was made to wait for the prompt. The ROM's TAQOZ, V1.1, is `ogo loadp2
   -xTAQOZ -b 115200 -t`. P2XCForth's console is at 230400 and its input
   ends lines at LF; it knows lower case only, takes no TAB for a space,
   keeps names to 19 characters, and its `+LOOP` ends only at equality. Every use of the port

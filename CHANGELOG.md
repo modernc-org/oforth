@@ -29,6 +29,11 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
   file. Now every word but `CLOSE-FILE` fails on it until it is opened
   again, as a Go `bufio.Writer` does after an error, and `CLOSE-FILE`
   closes it and fails.
+- **The benchmarks' TAQOZ sessions lose no line** (`scripts/session.py`):
+  the first line pasted into TAQOZ went in while it was still booting
+  and was lost, which changed no published number, every file for it
+  beginning with a comment; and a timed command whose `ok` came in one
+  read with TAQOZ's next prompt waited out its 120 s, its time right.
 
 ## v0.2.0
 

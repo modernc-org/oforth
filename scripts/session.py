@@ -37,9 +37,18 @@ import time
 READY = {
     "oforth": re.compile(rb"( ok| compiled| \?|error: [^\n]*)\r?\n$"),
     "p2xc": re.compile(rb"\n[^\n]*> $"),
-    "taqoz": re.compile(rb"(ok|\?\?\?|---)\s*$"),
+    # TAQOZ writes its next prompt after the ok, and when both came in one
+    # read, a timed command waited out its 120 s (seen 2026-11-06).
+    "taqoz": re.compile(rb"(ok|\?\?\?|---)\s*(TAQOZ# )?$"),
 }
 EOL = {"oforth": b"\r", "p2xc": b"\r\n", "taqoz": b"\r"}
+# What ends a system's banner, where its quiet after it does not: TAQOZ
+# says nothing for 1.7 s after the loader hands it over, before it probes
+# the SD card and writes its prompt, and a line sent in that silence was
+# lost (seen 2026-11-06).
+BANNER = {
+    "taqoz": re.compile(rb"TAQOZ# $"),
+}
 
 
 class Port:
@@ -94,9 +103,10 @@ def main():
     ready = READY[system]
     out = b""
 
-    def wait(secs, quiet=None):
-        """Reads until the system is ready again; answers the output and
-        the arrival times of the first { and the first } in it."""
+    def wait(secs, quiet=None, until=ready):
+        """Reads until the system is ready again, as until says; answers
+        the output and the arrival times of the first { and the first }
+        in it."""
         nonlocal out
         got = b""
         t_open = t_close = None
@@ -116,7 +126,7 @@ def main():
                     log.flush()
                 # Ready is the end, the closing mark seen or not: a timed
                 # command that failed answers with the prompt and no }.
-                if ready.search(got):
+                if until.search(got):
                     break
             elif quiet is not None and got and time.time() - last > quiet:
                 break
@@ -124,7 +134,10 @@ def main():
         return got, t_open, t_close
 
     # The banner, and the system's first prompt.
-    wait(15, quiet=1.5)
+    if system in BANNER:
+        wait(15, until=BANNER[system])
+    else:
+        wait(15, quiet=1.5)
     timed = None
     for line in lines:
         line = line.rstrip(b"\r")
