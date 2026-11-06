@@ -207,6 +207,20 @@ loop, still bytecodes in his hybrid, 10 instructions a zero flag here;
 the cache 1.5 times (OPTIMIZE-SIZE's 8,287 us a pass) and native code
 1.7; the LUT and 13 of the 16 registers the engine's; and whether
 P2XCForthE is out in an archive, to be measured with his `+loop`.
+He posted again on 2026-11-06: TAQOZ's data stack is 32 cells and its
+return stack 64, never too few for him, who has written nothing
+recursive, and he hits its branch distance at times. The answer,
+drafted here (`build/forum/reply-christof-2026-11-06.md`) from
+measurements on the board and posted by the user the same day: how
+deep the twelve programs go here, the stacks' free LUT cells filled
+with a pattern before a run and read after it (Ertl's loops 5 to 9
+cells, 34 fib 35 on each stack, Stanford's Quick 88 data cells, Puzzle,
+Quick and Trees 58 to 60 return cells), recursion being what goes deep;
+that TAQOZ answers 34 fib right, though at its prompt 33 numbers summed
+come out wrong and 32 right, a word summing n numbers was wrong at 32
+and 34 and right at 36 to 48, and its return stack took 100 nested
+calls; and that a branch here is a JMP to an absolute address, with no
+distance to hit.
 `.github/FUNDING.yml` is ogo's.
 
 The files:
@@ -483,7 +497,9 @@ version` and the clock they were taken at, never from the estimates.
   kernel's words before any defined later, so redefining one, ALLOT
   among them, needs `REWORD` first (bench/third/prelude-taqoz.fth); it
   has a word FLAGS of its own, which a `:=` of the same name breaks
-  (bench/taqoz.fth). The ROM's TAQOZ, V1.1, is `ogo loadp2
+  (bench/taqoz.fth). `scripts/session.py` loses the first line it
+  pastes into TAQOZ (seen 2026-11-06), so a file for it begins with a
+  comment, as third.sh's and size.sh's do. The ROM's TAQOZ, V1.1, is `ogo loadp2
   -xTAQOZ -b 115200 -t`. P2XCForth's console is at 230400 and its input
   ends lines at LF; it knows lower case only, takes no TAB for a space,
   keeps names to 19 characters, and its `+LOOP` ends only at equality. Every use of the port
