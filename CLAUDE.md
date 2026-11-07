@@ -58,8 +58,11 @@ word, by v0.2.0's `boot.binary` from the release's zip, 506,976 bytes
 (sha256 bdad7a41...) in one piece from cluster 359, which v0.2.0's
 REPL loaded into RAM copied from the host over 9P by the README's
 COPY, read back identical, `cardcheck.sh` passing and `mshowfat` on
-its image showing the clusters; not booted from the card, FLASH being
-on. Every block in use was copied to the host
+its image showing the clusters; booted from the card on 2026-11-07,
+with the user at the board and FLASH off for it, one lock held for the
+window and the ogo session told: "OctoForth v0.2.0", `1 2 + .` 3, and
+the card's `_BOOT_P2.BIX` 506,976 bytes by FILE-SIZE; FLASH on again,
+the flash's v0.2.0 booted and the loader loaded into RAM. Every block in use was copied to the host
 before the first write, in a scratch directory, and a FAT32 image built
 of it, which `fsck.fat -n` passed; the card is judged so after every
 change of the FAT code, there being no tool on the board for it:
