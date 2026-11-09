@@ -250,6 +250,13 @@ bubble sort 25,034, matrix multiply 49,999, fib 121, bench/'s five 701,
 the room at start 282,777 and the binary 391,592. OctoForth's and
 TAQOZ's numbers came out as before, to the clock and the byte, with an
 `ogo` newer than rc.3 on PATH (v1.0.0-rc.3.0.20261108080649-c49eacc37720+dirty).
+A short post reporting them in our thread, 178225, as the answer of
+2026-11-04 had promised, drafted here
+(`build/forum/reply-christof-2026-11-09.md`) after the numbers were
+pushed (40ffa18), was posted by the user the same day: F built with the
+same three changes and his own `+loop`, Ertl's four beside D's, the
+clocks 1.5 to 4 percent above D's, the call as D's in another build,
+and the README's link.
 `.github/FUNDING.yml` is ogo's.
 
 The files:
