@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file.
 
 # p2xc.sh builds P2XCForth for the P2-EDGE from its author's archive,
+# P2XCForthF.zip of 2026-11-07, which the benchmarks take, or
 # P2XCForthD.zip of 2026-04-07 or P2XCForthC.zip of 2025-07-11 (Christof
 # Eberspaecher, attached to his posts in the Parallax forum thread 176239;
 # the project has no repository), into build/p2xc/p2xc.binary, for the
@@ -11,7 +12,7 @@
 # nothing else: the crystal is the EDGE's 20 MHz, not the Kiss board's 25
 # MHz; the SD card is not mounted and its directory not listed, the card in
 # the shared board being another project's, and so the start-up's "2 load"
-# of a block from it is left out too (D's); and the Spin2 object's #define
+# of a block from it is left out too (D's and F's); and the Spin2 object's #define
 # lines are applied by hand, which this flexcc's preprocessor does not do
 # for an object the C uses. It compiles with the flexcc OctoGo embeds, built
 # from ../ogo. It also writes build/p2xc/author.fth: the definitions of its
@@ -20,14 +21,15 @@
 # macros), so that nothing of his is in this repository. The archive is not
 # this repository's and is never committed.
 #
-# Usage: scripts/p2xc.sh P2XCForthD.zip
+# Usage: scripts/p2xc.sh P2XCForthF.zip
 
 set -eu
-zip=${1:?usage: scripts/p2xc.sh P2XCForthD.zip}
+zip=${1:?usage: scripts/p2xc.sh P2XCForthF.zip}
 dir=build/p2xc
 rm -rf $dir
 mkdir -p $dir
-case $(unzip -Z1 "$zip" | grep -i 'P2XF[CD]\.c$') in
+case $(unzip -Z1 "$zip" | grep -i 'P2XF[CDF]\.c$') in
+*P2XFF.c) v=F ;;
 *P2XFD.c) v=D ;;
 *P2XFC.c) v=C ;;
 *) echo "no P2XCForth sources in $zip"; exit 1 ;;

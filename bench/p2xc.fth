@@ -1,5 +1,6 @@
 \ The benchmarks, P2XCForth's dialect, after build/p2xc/author.fth, which
-\ gives its author's block words and his sieve's size and flags macros.
+\ gives its author's block words and his sieve's size and flags macros, and
+\ i, the loop's index: r@ in P2XCForthD, a register in P2XCForthF.
 \ RECURSE, by the method he posted on 2026-04-08: the newest header's link
 \ field is the cell below HERE that holds CONTEXT, its code field 32 bytes
 \ on, and a call the wcall byte $26 and that address.
@@ -12,9 +13,9 @@
    flags size 1 fill
    0
    size 0 do
-      flags r@ + c@ if
-         r@ dup + 3 +
-         dup r@ +
+      flags i + c@ if
+         i dup + 3 +
+         dup i +
          begin dup size <
          while
             0 over flags + c!

@@ -960,7 +960,10 @@ and `2!` being the prelude's colon definitions), matrix multiply 1,288 and
 `34 fib` 23,477; its sieve does not run (its `+LOOP` ends at equality;
 since 2026-11-04 it runs with a `+LOOP` of the prelude's, 33,952 ms,
 which takes bubble sort to 77,924 and matrix multiply to 1,272) and
-Fraeman's file does not load (no DOES>). On TAQOZ Reloaded the sieve takes
+Fraeman's file does not load (no DOES>). P2XCForthF, its author's of
+2026-11-07, whose `+LOOP` is a bytecode ending past the limit, took on
+2026-11-09 23,850 ms for the sieve, 64,388 for bubble sort, 1,280 for
+matrix multiply and 24,137 for `34 fib`, and has since been the README's. On TAQOZ Reloaded the sieve takes
 34,380, bubble sort 78,262, matrix multiply 1,168 and `34 fib` 42,075, its
 prelude making CREATE's data its code space then (since 2026-11-01 its data
 space, above its image, which has 385,024 bytes); Fraeman's file does not

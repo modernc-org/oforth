@@ -16,7 +16,7 @@ copied in as P2 instructions, literals folded into them, small words
 inlined, a call in tail position made a jump, and loops without calls run
 from cog RAM. On the benchmarks below it runs about three to ten times as
 fast as the P2's other Forths, TAQOZ and P2XCForth, on the same board, an
-empty loop 16 to 36 times as fast, and a call of an empty word 1.5 to 2.1
+empty loop 16 to 36 times as fast, and a call of an empty word 1.5 to 2.4
 times. Its code is the largest of the three and the system itself takes
 206 KB of the hub RAM; it leaves a program about as much room as P2XCForth
 does, and less than TAQOZ (below, "What the programs take"). Its short
@@ -367,15 +367,16 @@ pins: `ogo run --no-inline ./example`.
 Reloaded and on P2XCForth, one after the other on a P2-EDGE, each
 timed by the system's own counter, in clocks, which do not depend on the
 clock frequency. Fewer is faster. OctoForth is built by OctoGo
-v1.0.0-rc.3, `--no-inline` (measured 2026-10-31).
+v1.0.0-rc.3, `--no-inline` (measured 2026-10-31; P2XCForth's column on
+2026-11-09, P2XCForthF's).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| an empty `DO LOOP`, 100,000 times | 200,132 | 7,200,129 | 3,200,288 |
-| an empty colon word called 100,000 times | 6,400,021 | 13,600,129 | 9,600,288 |
-| the Byte sieve, 8192 flags, one pass | 1,400,057 | 6,390,449 | 13,546,112 |
-| `25 fib`, recursive | 18,080,718 | 53,969,641 | 97,114,008 |
-| `10 fact` 10,000 times, recursive | 15,360,026 | 48,960,129 | 42,800,280 |
+| an empty `DO LOOP`, 100,000 times | 200,132 | 7,200,177 | 3,200,288 |
+| an empty colon word called 100,000 times | 6,400,021 | 15,200,177 | 9,600,288 |
+| the Byte sieve, 8192 flags, one pass | 1,400,057 | 6,670,577 | 13,546,112 |
+| `25 fib`, recursive | 18,080,718 | 54,940,777 | 97,114,008 |
+| `10 fact` 10,000 times, recursive | 15,360,026 | 49,680,177 | 42,800,280 |
 
 The sources are in [bench/](bench), the same algorithm in each system's
 dialect; the sieve is BYTE's of 1981 as P2XCForth's archive has it, with
@@ -390,15 +391,17 @@ of them being in this repository. Taken as they are:
   iteration its documentation gives. Its sieve array is in its data space,
   which `org` puts just above its image, and is named `fl`, TAQOZ having a
   FLAGS of its own.
-- P2XCForth is P2XCForthD, its author's newest, of 2026-04-07, attached to
+- P2XCForth is P2XCForthF, its author's newest, of 2026-11-07, attached to
   his forum post (the project has no repository), built for the P2-EDGE by
   `scripts/p2xc.sh` with four changes, which the script prints: the EDGE's
   20 MHz crystal, no SD card mounted, so no block loaded from it at start,
   and its Spin2 object's `#define`s applied by hand. Its empty loop takes
-  the 72 clocks an iteration its documentation gives. Its `recurse` works
-  as the one its author posted on 2026-04-08. Its timings move by up to a
-  tenth with where its words land in memory (its calls took 15,200,129 in
-  one build), and its archive of 2025-07-11 ran within that.
+  72 clocks an iteration, as P2XCForthD's did, where F's manual gives 80.
+  Its `recurse` works as the one its author posted on 2026-04-08. Its
+  timings move by up to a tenth with where its words land in memory.
+  P2XCForthD, of 2026-04-07, took 7,200,129, 13,600,129, 6,390,449,
+  53,969,641 and 48,960,129 clocks (its calls 15,200,129 in another
+  build), and its archive of 2025-07-11 ran within a tenth of that.
 - OctoForth's empty loop runs from cog RAM by REP, 2 clocks an iteration,
   the increment of its index. Its empty word ends in EXIT, which keeps it
   from being inlined: with no EXIT it is inlined to nothing, and the row
@@ -422,16 +425,15 @@ John Hennessy gathered, in Martin Fraeman's Forth of 1989. Every system
 runs at 200 MHz, timed by the host between two marks the system writes
 around the work, in milliseconds; fewer is faster. OctoForth is built by
 OctoGo v1.0.0-rc.3, `--no-inline` (measured 2026-10-31; TAQOZ's column
-again on 2026-11-01, its arrays in its data space; P2XCForth's sieve,
-bubble sort and matrix multiply on 2026-11-04, with a `+LOOP` of its
-prelude's).
+again on 2026-11-01, its arrays in its data space; P2XCForth's column on
+2026-11-09, P2XCForthF's).
 
 | | OctoForth | P2XCForth | TAQOZ |
 | --- | --- | --- | --- |
-| Ertl: sieve, 1000 times | 5,503 | 33,952 | 34,348 |
-| Ertl: bubble sort, 6000 | 10,175 | 77,924 | 78,263 |
-| Ertl: matrix multiply, 64 by 64 | 208 | 1,272 | 1,152 |
-| Ertl: `34 fib` | 7,743 | 23,477 | 42,811 |
+| Ertl: sieve, 1000 times | 5,503 | 23,850 | 34,348 |
+| Ertl: bubble sort, 6000 | 10,175 | 64,388 | 78,263 |
+| Ertl: matrix multiply, 64 by 64 | 208 | 1,280 | 1,152 |
+| Ertl: `34 fib` | 7,743 | 24,137 | 42,811 |
 | Stanford Perm, 10 times | 768 | does not load | does not load |
 | Stanford Towers | 1,393 | | |
 | Stanford Queens | 704 | | |
@@ -452,23 +454,20 @@ Each system loads a prelude first, [bench/third/](bench/third), with the
 words the programs need and it lacks: for OctoForth seven words of
 Fraeman's SC32 kernel; for P2XCForth, after its author's own block words
 taken from his archive at run time, plain colon definitions of the ANS
-words it lacks, `2@` and `2!` among them, which costs it in bubble sort,
-and a `+LOOP`, a macro; for TAQOZ its ANS words under TAQOZ's names, its
-data space moved above its image, with a CREATE and an ALLOT of that space,
-TAQOZ's own being of its code space, and `2@` and `2!` again colon
-definitions. P2XCForth's own `+LOOP` ends only when the index equals the
-limit, which the sieve's steps pass; the prelude's compiles a LOOP after
-code that adds the step to the index no further than the limit, three
-bytecodes a step that a LOOP ending past the limit would not need. Bubble
-sort and matrix multiply, whose steps land on their limits, ran with
-P2XCForth's own `+LOOP` too, a trap into its C, in 82,959 and 1,288 ms; the
-table has them with the prelude's. Its author has since changed his LOOP to
-end past the limit and made `+LOOP` a macro over it (2026-11-04), which
-P2XCForthD does not have. Fraeman's file does not load on P2XCForth,
-lacking DOES>, nor on TAQOZ: his defining words are colon definitions that
-run CREATE when they run, and TAQOZ, which compiles a whole line before it
-runs any of it, runs CREATE when it compiles them. Every program that ran
-gave its expected answer, and each Stanford one passed its own check.
+words it lacks, `2@` and `2!` among them, which costs it in bubble sort;
+for TAQOZ its ANS words under TAQOZ's names, its data space moved above its
+image, with a CREATE and an ALLOT of that space, TAQOZ's own being of its
+code space, and `2@` and `2!` again colon definitions. P2XCForthF's `+LOOP`
+is a bytecode that ends the loop when the index reaches or passes the
+limit. P2XCForthD's, of 2026-04-07, ended only when the index equalled the
+limit, which the sieve's steps pass, and was a trap into its C: D ran the
+sieve with a `+LOOP` of the prelude's in 33,952 ms, bubble sort in 77,924
+(82,959 with its own `+LOOP`), matrix multiply in 1,272 (1,288) and
+`34 fib` in 23,477. Fraeman's file does not load on P2XCForth, lacking
+DOES>, nor on TAQOZ: his defining words are colon definitions that run
+CREATE when they run, and TAQOZ, which compiles a whole line before it runs
+any of it, runs CREATE when it compiles them. Every program that ran gave
+its expected answer, and each Stanford one passed its own check.
 The host's clock ticks every 16 ms, so a Stanford time moves by a tick or
 two from run to run, and by up to 5% with where the code lands: TAQOZ's
 `34 fib`, which has no array, took 42,075 before its prelude grew.
@@ -488,7 +487,7 @@ different things:
   the system itself is the other 211,092. Its headers are in tables of
   their own, room for 1024 headers and 12 KB of names, and are not
   counted here.
-- P2XCForth's binary is 386,796 bytes, 300,000 of them its one memory for
+- P2XCForth's binary is 391,592 bytes, 300,000 of them its one memory for
   code, headers and data, the last 32 KB of which are its block buffer. Its
   room at start is after its author's words, which the scripts load first.
 - TAQOZ's image is 131,072 bytes. Inside it its code grows up and its
@@ -500,11 +499,11 @@ different things:
 
 | | OctoForth code | OctoForth data | P2XCForth | TAQOZ code | TAQOZ data |
 | --- | --- | --- | --- | --- | --- |
-| the room at start | 126,152 | 163,824 | 283,168 | 62,278 | 385,020 |
-| bench/'s five | 1,268 | 8,192 | 669 | 321 | 8,192 |
-| Ertl: sieve | 732 | 8,196 | 8,539 | 170 | 8,194 |
-| Ertl: bubble sort | 1,896 | 24,038 | 25,033 | 497 | 24,004 |
-| Ertl: matrix multiply | 1,304 | 49,156 | 50,000 | 402 | 49,156 |
+| the room at start | 126,152 | 163,824 | 282,777 | 62,278 | 385,020 |
+| bench/'s five | 1,268 | 8,192 | 701 | 321 | 8,192 |
+| Ertl: sieve | 732 | 8,196 | 8,552 | 170 | 8,194 |
+| Ertl: bubble sort | 1,896 | 24,038 | 25,034 | 497 | 24,004 |
+| Ertl: matrix multiply | 1,304 | 49,156 | 49,999 | 402 | 49,156 |
 | Ertl: fib | 144 | 0 | 121 | 51 | 0 |
 | Stanford, all eight | 22,468 | 68,787 | does not load | does not load | |
 

@@ -14,12 +14,16 @@ one. `git show vX.Y.Z:CHANGELOG.md` is the check.
 
 ### Changed
 
-- **Ertl's sieve runs on P2XCForth** in the benchmarks: its prelude has a
-  `+LOOP` of its own, P2XCForth's ending only when the index equals the
-  limit, which the sieve's steps pass. 1000 passes take 33,952 ms at 200
-  MHz, against OctoForth's 5,503 and TAQOZ's 34,348. Bubble sort and
-  matrix multiply take it too, P2XCForth's own being a trap into its C:
-  77,924 ms against 82,959, and 1,272 against 1,288.
+- **The benchmarks run P2XCForthF**, its author's newest, of 2026-11-07,
+  where they ran P2XCForthD, of 2026-04-07, and **Ertl's sieve runs on
+  it**: F's `+LOOP` is a bytecode that ends the loop past the limit,
+  where D's ended only at equality, which the sieve's steps pass. 1000
+  passes take 23,850 ms at 200 MHz, against OctoForth's 5,503 and TAQOZ's
+  34,348; bubble sort takes 64,388 where D took 82,959, matrix multiply
+  1,280 against 1,288, and `34 fib` 24,137 against 23,477. In clocks F
+  runs bench/'s five as D did or slower, the sieve by 4% and its calls by
+  12%, which D's took too in another build. `scripts/p2xc.sh` builds F, D
+  or C.
 
 ### Fixed
 

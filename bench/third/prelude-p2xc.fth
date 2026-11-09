@@ -1,5 +1,5 @@
-\ P2XCForth's prelude to the third parties' benchmarks, for P2XCForthD of
-\ 2026-04-07. It follows build/p2xc/author.fth, which scripts/p2xc.sh takes
+\ P2XCForth's prelude to the third parties' benchmarks, for P2XCForthF of
+\ 2026-11-07. It follows build/p2xc/author.fth, which scripts/p2xc.sh takes
 \ from the archive: its author's words his start-up loads from the SD card,
 \ which the build for the shared board does not mount (i, <>, cells and
 \ the like). RECURSE by the method he posted on 2026-04-08: the newest
@@ -35,24 +35,22 @@
 : -rot rot rot ;
 : /mod 2dup mod -rot / ;
 : type begin dup while swap dup c@ emit 1+ swap 1- repeat 2drop ;
-\ The SC32 kernel's words Fraeman's suite uses. DO keeps the limit and the
-\ index on the return stack here, so undo drops two cells under the return.
+\ The SC32 kernel's words Fraeman's suite uses. DO keeps the index of the
+\ loop around it and its own limit on the return stack here, the limit on
+\ top, and its own index in a register, which seti sets, so undo drops the
+\ limit and puts the outer index back, under the return.
 : 2pick >r over r> swap ;
 : 3pick >r >r over r> swap r> swap ;
 : rdrop r> r> drop >r ;
-: undo r> r> drop r> drop >r ;
+: undo r> r> drop r> seti >r ;
 : recursive newest context ! ; immediate
 \ Only timetype, which is not run, uses these:
 variable base
 : <# ; : #s ; : #> ;
 : u.lz 2drop ;
-\ +LOOP, for a step that is positive, all the programs take: P2XCForth's
-\ LOOP and +LOOP end only when the index equals the limit, which the sieve's
-\ steps pass, and its +LOOP is a trap into its C. This one adds the step to
-\ the index, no further than the limit, and one less, which the LOOP it
-\ compiles adds; the top of the return stack is the index, the cell under it
-\ the limit. Its author wrote on 2026-11-04 of a +LOOP of his, a macro over
-\ a LOOP he changed to end past the limit, which P2XCForthD's does not.
-: +loop s" r> + r@ min 1- >r loop " eval$ ; immediate
+\ +LOOP is P2XCForthF's own, a bytecode that ends the loop when the index
+\ reaches or passes the limit, as its LOOP does. P2XCForthD's ended only
+\ when the index equalled the limit, which the sieve's steps pass, and was
+\ a trap into its C, and this prelude had a +LOOP of its own for it.
 \ What cannot be given here: DOES>, which Fraeman's structures, and so his
 \ Towers and Trees, are made with.
